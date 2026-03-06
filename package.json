@@ -1,0 +1,15 @@
+{
+  "name": "fluxerguard",
+  "version": "1.0.0",
+  "description": "FluxerGuard - Security Bot pentru Fluxer.app",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "node-fetch": "^2.7.0",
+    "@supabase/supabase-js": "^2.43.0",
+    "dotenv": "^16.4.5"
+  }
+}
