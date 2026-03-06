@@ -2,18 +2,19 @@ const { getSettings, updateSettings, addWhitelist, removeWhitelist, getWhitelist
         addBlacklist, removeBlacklist, getBlacklist } = require('../utils/db');
 
 function resolveId(i) { return i ? i.replace(/[<@!>&]/g, '') : null; }
-const reply = (api, channelId, content) =>
-  api.channels.createMessage(channelId, typeof content === 'string' ? { content } : content);
+const reply = (api, channelId, text) => api.channels.createMessage(channelId, { content: text });
 
+// ── SETPREFIX ─────────────────────────────────────────────────────────────────
 const setprefix = { name: 'setprefix', names: ['setprefix'], permissions: true,
   async execute({ api, args, guildId, channelId }) {
     if (!args[0] || args[0].length > 5) return reply(api, channelId,
-      '❌ **Usage:** `!setprefix <prefix>`\n**Example:** `!setprefix ?` or `!setprefix g!`\n_(max 5 characters)_');
+      '❌ **Usage:** `!setprefix <prefix>`\n**Example:** `!setprefix ?` or `!setprefix g!` _(max 5 chars)_');
     await updateSettings(guildId, { prefix: args[0] });
     return reply(api, channelId, `✅ Prefix changed to \`${args[0]}\``);
   }
 };
 
+// ── SETLOG ────────────────────────────────────────────────────────────────────
 const setlog = { name: 'setlog', names: ['setlog'], permissions: true,
   async execute({ api, args, guildId, channelId }) {
     const id = args[0] ? resolveId(args[0]) : channelId;
@@ -22,6 +23,7 @@ const setlog = { name: 'setlog', names: ['setlog'], permissions: true,
   }
 };
 
+// ── WHITELIST ─────────────────────────────────────────────────────────────────
 const whitelist = { name: 'whitelist', names: ['whitelist', 'wl'], permissions: true,
   async execute({ api, args, guildId, channelId }) {
     const sub = (args[0] || '').toLowerCase();
@@ -29,21 +31,19 @@ const whitelist = { name: 'whitelist', names: ['whitelist', 'wl'], permissions: 
       '❌ **Usage:**\n`!whitelist add <@user|ID>` — bypass all security\n`!whitelist remove <@user|ID>`\n`!whitelist list`');
     if (sub === 'list') {
       const l = await getWhitelist(guildId);
-      return reply(api, channelId, l.length
-        ? { embeds: [{ color: 0x57f287, title: '✅ Security Whitelist',
-            description: l.map(id => `• \`${id}\``).join('\n'),
-            footer: { text: 'Whitelisted users bypass all auto-security modules' } }] }
-        : '📋 The whitelist is empty.');
+      if (!l.length) return reply(api, channelId, '📋 The whitelist is empty.');
+      return reply(api, channelId, `✅ **Security Whitelist** (${l.length})\n${l.map(id => `• \`${id}\``).join('\n')}`);
     }
     const userId = resolveId(args[1]);
     if (!userId) return reply(api, channelId,
-      '❌ **Usage:** `!whitelist add/remove <@user|ID>`\n**Example:** `!whitelist add @User`');
-    if (sub === 'add') { await addWhitelist(guildId, userId); return reply(api, channelId, `✅ \`${userId}\` added to whitelist.`); }
+      '❌ **Usage:** `!whitelist add/remove <@user|ID>`');
+    if (sub === 'add')    { await addWhitelist(guildId, userId);    return reply(api, channelId, `✅ \`${userId}\` added to whitelist — bypasses all security.`); }
     if (sub === 'remove') { await removeWhitelist(guildId, userId); return reply(api, channelId, `✅ \`${userId}\` removed from whitelist.`); }
-    return reply(api, channelId, '❌ Unknown subcommand.\n**Usage:** `!whitelist add/remove/list`');
+    return reply(api, channelId, '❌ Unknown subcommand. Use: `add` / `remove` / `list`');
   }
 };
 
+// ── BLACKLIST ─────────────────────────────────────────────────────────────────
 const blacklist = { name: 'blacklist', names: ['blacklist', 'bl'], permissions: true,
   async execute({ api, args, guildId, channelId }) {
     const sub = (args[0] || '').toLowerCase();
@@ -51,52 +51,49 @@ const blacklist = { name: 'blacklist', names: ['blacklist', 'bl'], permissions: 
       '❌ **Usage:**\n`!blacklist add <@user|ID>` — auto-ban on join\n`!blacklist remove <@user|ID>`\n`!blacklist list`');
     if (sub === 'list') {
       const l = await getBlacklist(guildId);
-      return reply(api, channelId, l.length
-        ? { embeds: [{ color: 0xed4245, title: '🚫 Security Blacklist',
-            description: l.map(id => `• \`${id}\``).join('\n'),
-            footer: { text: 'Blacklisted users are auto-banned on join' } }] }
-        : '📋 The blacklist is empty.');
+      if (!l.length) return reply(api, channelId, '📋 The blacklist is empty.');
+      return reply(api, channelId, `🚫 **Security Blacklist** (${l.length})\n${l.map(id => `• \`${id}\``).join('\n')}`);
     }
     const userId = resolveId(args[1]);
     if (!userId) return reply(api, channelId,
-      '❌ **Usage:** `!blacklist add/remove <@user|ID>`\n**Example:** `!blacklist add 123456789012345678`');
-    if (sub === 'add') { await addBlacklist(guildId, userId); return reply(api, channelId, `🚫 \`${userId}\` added to blacklist — auto-banned on join.`); }
+      '❌ **Usage:** `!blacklist add/remove <@user|ID>`');
+    if (sub === 'add')    { await addBlacklist(guildId, userId);    return reply(api, channelId, `🚫 \`${userId}\` added to blacklist — auto-banned on join.`); }
     if (sub === 'remove') { await removeBlacklist(guildId, userId); return reply(api, channelId, `✅ \`${userId}\` removed from blacklist.`); }
-    return reply(api, channelId, '❌ Unknown subcommand.\n**Usage:** `!blacklist add/remove/list`');
+    return reply(api, channelId, '❌ Unknown subcommand. Use: `add` / `remove` / `list`');
   }
 };
 
+// ── CONFIG ────────────────────────────────────────────────────────────────────
 const CONFIG_HELP = `❌ **Usage:** \`!config <module> <key> <value>\`
 \`\`\`
 !config antiraid  enabled    true/false
-!config antiraid  threshold  5           (joins before trigger)
+!config antiraid  threshold  5
 !config antiraid  action     kick/ban
 
 !config antinuke  enabled    true/false
 !config antinuke  threshold  3
 
-!config antispam  enabled    true/false
+!config antispam  enabled     true/false
 !config antispam  maxmessages 8
-!config antispam  action     timeout/kick/ban
+!config antispam  action      timeout/kick/ban
 
-!config antiflood enabled    true/false
-!config antiflood duplicates 4
+!config antiflood enabled     true/false
+!config antiflood duplicates  4
 \`\`\``;
 
 const config = { name: 'config', names: ['config', 'settings'], permissions: true,
   async execute({ api, args, guildId, channelId }) {
     if (!args[0]) {
       const g = await getSettings(guildId);
-      return reply(api, channelId, { embeds: [{ color: 0x5865f2,
-        title: '⚙️ FluxerGuard Configuration',
-        description: `Prefix: \`${g.prefix}\` | Log: ${g.log_channel ? `<#${g.log_channel}>` : '`not set — use !setlog`'}`,
-        fields: [
-          { name: '🛡️ AntiRaid',  value: `Enabled: **${g.antiraid_enabled}** | ${g.antiraid_threshold} joins/${g.antiraid_interval/1000}s | action: **${g.antiraid_action}**` },
-          { name: '💥 AntiNuke',  value: `Enabled: **${g.antinuke_enabled}** | ${g.antinuke_threshold} actions/${g.antinuke_interval/1000}s` },
-          { name: '⚠️ AntiSpam',  value: `Enabled: **${g.antispam_enabled}** | max ${g.antispam_max_msgs} msgs | action: **${g.antispam_action}**` },
-          { name: '🌊 AntiFlood', value: `Enabled: **${g.antiflood_enabled}** | ${g.antiflood_duplicates} duplicates` },
-        ],
-        footer: { text: 'Use !config <module> <key> <value> to change settings' } }] });
+      const logStr = g.log_channel ? `<#${g.log_channel}>` : '`not set — use !setlog`';
+      return reply(api, channelId,
+        `⚙️ **FluxerGuard Configuration**\nPrefix: \`${g.prefix}\` | Log: ${logStr}\n\n` +
+        `🛡️ **AntiRaid:** enabled=${g.antiraid_enabled} | threshold=${g.antiraid_threshold} joins/${g.antiraid_interval/1000}s | action=${g.antiraid_action}\n` +
+        `💥 **AntiNuke:** enabled=${g.antinuke_enabled} | threshold=${g.antinuke_threshold} actions/${g.antinuke_interval/1000}s\n` +
+        `⚠️ **AntiSpam:** enabled=${g.antispam_enabled} | max=${g.antispam_max_msgs} msgs | action=${g.antispam_action}\n` +
+        `🌊 **AntiFlood:** enabled=${g.antiflood_enabled} | duplicates=${g.antiflood_duplicates}\n\n` +
+        `_Use \`!config <module> <key> <value>\` to change settings_`
+      );
     }
     const [mod, key, value] = [args[0].toLowerCase(), args[1]?.toLowerCase(), args[2]];
     if (!key || !value) return reply(api, channelId, CONFIG_HELP);
@@ -115,22 +112,31 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
   }
 };
 
+// ── HELP ──────────────────────────────────────────────────────────────────────
 const help = { name: 'help', names: ['help'],
   async execute({ api, guildId, channelId }) {
-    const { prefix } = await getSettings(guildId);
-    const p = prefix || '!';
-    return reply(api, channelId, { embeds: [{ color: 0x5865f2,
-      title: '🛡️ FluxerGuard — Commands',
-      description: `Current prefix: \`${p}\``,
-      fields: [
-        { name: '🔨 Moderation', value: [`\`${p}ban <@user|ID> [reason]\``,`\`${p}kick <@user|ID> [reason]\``,`\`${p}warn <@user|ID> <reason>\``,`\`${p}unban <userID> [reason]\``,`\`${p}timeout <@user|ID> <duration> [reason]\``,`\`${p}untimeout <@user|ID> [reason]\``].join('\n') },
-        { name: '📋 Cases', value: [`\`${p}case <ID>\``,`\`${p}case history <@user|ID>\``].join('\n') },
-        { name: '🛡️ Security', value: [`\`${p}config\``,`\`${p}whitelist add/remove/list\``,`\`${p}blacklist add/remove/list\``].join('\n') },
-        { name: '⚙️ Setup', value: [`\`${p}setprefix <prefix>\``,`\`${p}setlog [#channel]\``].join('\n') },
-        { name: '⏱️ Duration format', value: '`30s` `10m` `2h` `1d` (max 28d)' },
-      ],
-      footer: { text: 'FluxerGuard • Multi-Server Security Bot' },
-      timestamp: new Date().toISOString() }] });
+    const { prefix: p } = await getSettings(guildId);
+    return reply(api, channelId,
+      `🛡️ **FluxerGuard — Commands** | Prefix: \`${p}\`\n\n` +
+      `**🔨 Moderation**\n` +
+      `\`${p}ban <@user|ID> [reason]\`\n` +
+      `\`${p}kick <@user|ID> [reason]\`\n` +
+      `\`${p}warn <@user|ID> <reason>\`\n` +
+      `\`${p}unban <userID> [reason]\`\n` +
+      `\`${p}timeout <@user|ID> <duration> [reason]\`\n` +
+      `\`${p}untimeout <@user|ID> [reason]\`\n\n` +
+      `**📋 Cases**\n` +
+      `\`${p}case <ID>\` — look up a case\n` +
+      `\`${p}case history <@user|ID>\` — user history\n\n` +
+      `**🛡️ Security**\n` +
+      `\`${p}config\` — view/edit security settings\n` +
+      `\`${p}whitelist add/remove/list\`\n` +
+      `\`${p}blacklist add/remove/list\`\n\n` +
+      `**⚙️ Setup**\n` +
+      `\`${p}setprefix <prefix>\`\n` +
+      `\`${p}setlog [#channel]\`\n\n` +
+      `**⏱️ Duration format:** \`30s\` \`10m\` \`2h\` \`1d\` (max 28d)`
+    );
   }
 };
 
