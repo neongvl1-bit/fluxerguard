@@ -12,10 +12,10 @@ const { sendLog } = require('./utils/logger');
 const TOKEN    = process.env.FLUXER_BOT_TOKEN;
 const API_BASE = 'https://api.fluxer.app/v1';
 
-if (!TOKEN) { console.error('❌ FLUXER_BOT_TOKEN lipseste!'); process.exit(1); }
-if (!process.env.SUPABASE_URL) { console.error('❌ SUPABASE_URL lipseste!'); process.exit(1); }
+if (!TOKEN)                    { console.error('❌ FLUXER_BOT_TOKEN missing!');  process.exit(1); }
+if (!process.env.SUPABASE_URL) { console.error('❌ SUPABASE_URL missing!');      process.exit(1); }
 
-// ── REST helper ───────────────────────────────────
+// ── REST ──────────────────────────────────────────────────────────────────────
 const api = {
   async request(method, path, body) {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -23,31 +23,29 @@ const api = {
       headers: { 'Authorization': `Bot ${TOKEN}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) {
-      const err = await res.text().catch(() => res.statusText);
-      throw new Error(`API ${method} ${path} → ${res.status}: ${err}`);
-    }
     if (res.status === 204) return null;
-    return res.json();
+    const text = await res.text();
+    if (!res.ok) throw new Error(`API ${method} ${path} → ${res.status}: ${text}`);
+    try { return JSON.parse(text); } catch { return text; }
   },
-  get:    (path)         => api.request('GET',    path),
-  post:   (path, body)   => api.request('POST',   path, body),
-  put:    (path, body)   => api.request('PUT',    path, body),
-  patch:  (path, body)   => api.request('PATCH',  path, body),
-  delete: (path)         => api.request('DELETE', path),
+  get:    (path)        => api.request('GET',    path),
+  post:   (path, body)  => api.request('POST',   path, body),
+  put:    (path, body)  => api.request('PUT',    path, body),
+  patch:  (path, body)  => api.request('PATCH',  path, body),
+  delete: (path)        => api.request('DELETE', path),
 
-  // Convenience methods matching command usage
   channels: {
     createMessage: (channelId, body) => api.post(`/channels/${channelId}/messages`, body),
     fetch:         (channelId)       => api.get(`/channels/${channelId}`),
   },
   guilds: {
-    getMember:    (guildId, userId) => api.get(`/guilds/${guildId}/members/${userId}`),
+    getMember:    (guildId, userId)       => api.get(`/guilds/${guildId}/members/${userId}`),
+    getRoles:     (guildId)               => api.get(`/guilds/${guildId}/roles`),
     banUser:      (guildId, userId, body) => api.put(`/guilds/${guildId}/bans/${userId}`, body),
-    unbanUser:    (guildId, userId)  => api.delete(`/guilds/${guildId}/bans/${userId}`),
-    removeMember: (guildId, userId)  => api.delete(`/guilds/${guildId}/members/${userId}`),
+    unbanUser:    (guildId, userId)       => api.delete(`/guilds/${guildId}/bans/${userId}`),
+    removeMember: (guildId, userId)       => api.delete(`/guilds/${guildId}/members/${userId}`),
     editMember:   (guildId, userId, body) => api.patch(`/guilds/${guildId}/members/${userId}`, body),
-    getAuditLog:  (guildId, params)  => {
+    getAuditLog:  (guildId, params)       => {
       const q = new URLSearchParams(params).toString();
       return api.get(`/guilds/${guildId}/audit-logs?${q}`);
     },
@@ -58,9 +56,22 @@ const api = {
   },
 };
 
-// ── Gateway ───────────────────────────────────────
+// ── Gateway ───────────────────────────────────────────────────────────────────
 let ws, heartbeatInterval, sessionId, resumeUrl, sequence = null;
-let botUser = null;
+let botUser      = null;
+let reconnecting = false;
+let retryDelay   = 3000;
+
+// Intents: GUILDS(1) + GUILD_MEMBERS(2) + GUILD_MESSAGES(512) + MESSAGE_CONTENT(32768) + GUILD_MODERATION(4)
+// Total = 1 + 2 + 4 + 512 + 32768 = 33287
+// Daca tot pica, incercam si cu 0, 1, 512, 33287
+const INTENTS = [
+  33287,  // toate cele necesare
+  513,    // GUILDS + GUILD_MESSAGES
+  32769,  // GUILDS + MESSAGE_CONTENT
+  0,      // fara intents (fallback)
+];
+let intentIndex = 0;
 
 function send(op, d) {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -69,27 +80,34 @@ function send(op, d) {
 }
 
 function identify() {
+  const intents = INTENTS[intentIndex % INTENTS.length];
+  console.log(`[GW] Identifying with intents=${intents}...`);
   send(2, {
     token: TOKEN,
-    intents: 0,
-    properties: { os: 'windows', browser: 'fluxerguard', device: 'fluxerguard' },
+    intents,
+    properties: { os: 'linux', browser: 'fluxerguard', device: 'fluxerguard' },
   });
 }
 
 function startHeartbeat(interval) {
   clearInterval(heartbeatInterval);
-  heartbeatInterval = setInterval(() => send(1, sequence), interval);
+  heartbeatInterval = setInterval(() => {
+    if (ws?.readyState === WebSocket.OPEN) send(1, sequence);
+  }, interval);
 }
 
 async function dispatch(event, data) {
   try {
     if (event === 'READY') {
-      botUser = data.user;
-      sessionId = data.session_id;
-      resumeUrl = data.resume_gateway_url || 'wss://gateway.fluxer.app';
+      botUser    = data.user;
+      sessionId  = data.session_id;
+      resumeUrl  = data.resume_gateway_url || 'wss://gateway.fluxer.app';
+      retryDelay = 3000; // reset delay dupa succes
+      intentIndex = intentIndex; // pastreaza intentul care a mers
       console.log('\n╔══════════════════════════════════════════╗');
       console.log(`║  FluxerGuard — Online ✅                  ║`);
-      console.log(`║  Bot: @${botUser.username.padEnd(33)}║`);
+      console.log(`║  Bot: @${(botUser.username || '?').padEnd(33)}║`);
+      console.log(`║  Intents: ${String(INTENTS[intentIndex % INTENTS.length]).padEnd(30)}║`);
       console.log('╚══════════════════════════════════════════╝\n');
     }
 
@@ -100,10 +118,14 @@ async function dispatch(event, data) {
     }
 
     else if (event === 'GUILD_MEMBER_ADD') {
-      const guildId = data.guild_id, userId = data.user.id;
+      const guildId = data.guild_id, userId = data.user?.id;
+      if (!guildId || !userId) return;
       if (await isBlacklisted(guildId, userId)) {
         const reason = '[Blacklist] Auto-banned on join';
-        try { const dm = await api.users.createDM(userId); await api.channels.createMessage(dm.id, { content: `You were **auto-banned**. Reason: ${reason}` }); } catch (_) {}
+        try {
+          const dm = await api.users.createDM(userId);
+          await api.channels.createMessage(dm.id, { content: `You were **auto-banned**. Reason: ${reason}` });
+        } catch (_) {}
         await api.guilds.banUser(guildId, userId, { reason });
         const entry = await createCase(guildId, { action: 'BAN', userId, userTag: data.user.username, modId: 'bot', modTag: 'FluxerGuard', reason, auto: true });
         await sendLog(api, guildId, 'BAN', { 'User': `${data.user.username} (${userId})`, 'Reason': reason, 'Case': entry.caseId }, entry);
@@ -119,7 +141,7 @@ async function dispatch(event, data) {
       const typeMap = { CHANNEL_DELETE: 12, CHANNEL_CREATE: 10, GUILD_ROLE_DELETE: 32, GUILD_ROLE_CREATE: 30 };
       try {
         const logs  = await api.guilds.getAuditLog(guildId, { limit: 1, action_type: typeMap[event] });
-        const entry = logs.audit_log_entries?.[0];
+        const entry = logs?.audit_log_entries?.[0];
         if (!entry) return;
         const ts = Number(BigInt(entry.id) >> 22n) + 1420070400000;
         if (Date.now() - ts > 5000) return;
@@ -132,40 +154,67 @@ async function dispatch(event, data) {
 }
 
 function connect() {
+  if (reconnecting) return;
+  reconnecting = true;
+
   const url = 'wss://gateway.fluxer.app/?v=1&encoding=json';
-  console.log(`Connecting to ${url}...`);
+  console.log(`[GW] Connecting... (attempt with intents=${INTENTS[intentIndex % INTENTS.length]})`);
   ws = new WebSocket(url);
 
-  ws.on('open', () => console.log('[GW] Connected'));
+  ws.on('open', () => {
+    reconnecting = false;
+    console.log('[GW] Connected');
+  });
 
   ws.on('message', async (raw) => {
-    const { op, t, s, d } = JSON.parse(raw);
-    if (s) sequence = s;
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return; }
+    const { op, t, s, d } = parsed;
+    if (s !== null && s !== undefined) sequence = s;
 
-    if (op === 10) { // HELLO
+    if (op === 10) {           // HELLO
       startHeartbeat(d.heartbeat_interval);
       identify();
       console.log(`[GW] Hello — heartbeat every ${d.heartbeat_interval}ms`);
     }
-    else if (op === 11) { /* heartbeat ack */ }
-    else if (op === 0)  { await dispatch(t, d); } // DISPATCH
-    else if (op === 9)  { // Invalid session
-      console.log('[GW] Invalid session — reconnecting...');
-      setTimeout(connect, 3000);
+    else if (op === 11) {}     // Heartbeat ACK
+    else if (op === 0) {       // DISPATCH
+      await dispatch(t, d);
     }
-    else if (op === 7) { // Reconnect
-      console.log('[GW] Reconnect requested');
+    else if (op === 9) {       // Invalid Session
+      console.log(`[GW] Invalid session (d=${d}) — trying next intent set...`);
+      intentIndex++;
+      clearInterval(heartbeatInterval);
       ws.close();
+      // Asteapta inainte de reconectare (recomandat de protocol)
+      setTimeout(() => { reconnecting = false; connect(); }, retryDelay);
+      retryDelay = Math.min(retryDelay * 1.5, 30000);
+    }
+    else if (op === 7) {       // Reconnect
+      console.log('[GW] Server requested reconnect');
+      ws.close();
+    }
+    else {
+      console.log(`[GW] Unknown op=${op}`);
     }
   });
 
   ws.on('close', (code, reason) => {
     clearInterval(heartbeatInterval);
-    console.log(`[GW] Closed (${code}) — reconnecting in 5s...`);
-    if (code !== 1000) setTimeout(connect, 5000);
+    const reasonStr = reason?.toString() || '';
+    console.log(`[GW] Closed (code=${code} reason="${reasonStr}")`);
+    if (code === 4004) { console.error('❌ Invalid token! Check FLUXER_BOT_TOKEN.'); process.exit(1); }
+    if (code === 4013) { console.error('❌ Invalid intents! Gateway rejected our intents.'); }
+    if (code === 4014) { console.error('❌ Disallowed intents! Need to enable them in bot settings.'); }
+    if (code !== 1000 && code !== 4004) {
+      setTimeout(() => { reconnecting = false; connect(); }, retryDelay);
+    }
   });
 
-  ws.on('error', err => console.error('[GW ERROR]', err.message));
+  ws.on('error', err => {
+    console.error('[GW ERROR]', err.message);
+    reconnecting = false;
+  });
 }
 
 process.on('unhandledRejection', err => console.error('[UNHANDLED]', err?.message || err));
