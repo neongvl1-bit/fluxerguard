@@ -4,11 +4,19 @@ const { getSettings } = require('../utils/db');
 
 const commands = new Map();
 
+// Incarca comenzile — fiecare fisier exporta un obiect principal + optional .extra[]
+// Evitam dublurile: nu adaugam acelasi obiect de 2 ori
 const cmdDir = path.join(__dirname, '../commands');
 for (const file of fs.readdirSync(cmdDir).filter(f => f.endsWith('.js'))) {
-  const mod = require(path.join(cmdDir, file));
-  const all = [mod, ...(mod.extra || [])].filter(c => c && c.name);
+  const mod  = require(path.join(cmdDir, file));
+  const list = mod.extra ? mod.extra : [mod]; // daca are .extra, folosim DOAR extra (include si principalul)
+  // Daca are .extra, principalul e deja inclus in lista extra? Nu neaparat — adaugam tot
+  const all  = mod.extra ? [mod, ...mod.extra] : [mod];
+  // Deduplicare prin referinta
+  const seen = new Set();
   for (const cmd of all) {
+    if (!cmd || !cmd.name || seen.has(cmd)) continue;
+    seen.add(cmd);
     const names = Array.isArray(cmd.names) ? cmd.names : [cmd.name];
     for (const name of names) commands.set(name.toLowerCase(), cmd);
     console.log(`[CMD] Loaded: ${names.join(', ')}`);
@@ -19,62 +27,91 @@ function isOwner(userId) {
   return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).filter(Boolean).includes(userId);
 }
 
+// Calculeaza permisiunile unui user din rolurile sale
+async function getPermBits(api, guildId, memberRoles) {
+  try {
+    const rolesData = await api.get(`/guilds/${guildId}/roles`);
+    const allRoles  = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
+    const myRoleIds = new Set((memberRoles || []).map(String));
+    let perms = 0n;
+    for (const role of allRoles) {
+      if (String(role.id) === String(guildId) || myRoleIds.has(String(role.id))) {
+        try { perms |= BigInt(role.permissions || '0'); } catch (_) {}
+      }
+    }
+    return perms;
+  } catch (_) { return 0n; }
+}
+
+// Returneaza "puterea" unui user: suma pozitiilor rolurilor sale (mai mare = mai puternic)
+async function getRolePower(api, guildId, memberRoles) {
+  try {
+    const rolesData = await api.get(`/guilds/${guildId}/roles`);
+    const allRoles  = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
+    const myRoleIds = new Set((memberRoles || []).map(String));
+    let power = 0;
+    for (const role of allRoles) {
+      if (myRoleIds.has(String(role.id))) {
+        power = Math.max(power, role.position || 0);
+      }
+    }
+    return power;
+  } catch (_) { return 0; }
+}
+
 async function memberHasPermission(api, guildId, message) {
   try {
     const member = message.member;
 
-    // Varianta 1: Fluxer trimite permissions direct pe member (string bitfield)
-    if (member && member.permissions !== undefined && member.permissions !== null) {
+    // Varianta 1: permissions direct pe member din payload
+    if (member?.permissions !== undefined && member?.permissions !== null) {
       try {
         const perms = BigInt(member.permissions);
-        if (
-          (perms & 8n)          ||
-          (perms & 4n)          ||
-          (perms & 2n)          ||
-          (perms & 32n)         ||
-          (perms & 268435456n)
-        ) return true;
-      } catch (_) {}
-    }
-
-    // Varianta 2: Calculeaza din roluri
-    // IMPORTANT: convertim toate ID-urile la String() — pot veni ca number din API
-    // si JS roteaza numerele mari (pierde precizia), deci nu folosim == ci String()
-    const memberRoleIds = new Set((member?.roles || []).map(r => String(r)));
-
-    const rolesData = await api.get(`/guilds/${guildId}/roles`);
-    const allRoles  = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
-
-    console.log(`[PERMS] member roles: ${[...memberRoleIds].join(', ')}`);
-    console.log(`[PERMS] guild has ${allRoles.length} roles`);
-
-    for (const role of allRoles) {
-      const roleId     = String(role.id);
-      const isEveryone = roleId === String(guildId);
-      if (!isEveryone && !memberRoleIds.has(roleId)) continue;
-
-      try {
-        const perms = BigInt(role.permissions || '0');
-        console.log(`[PERMS] checking role "${role.name}" (${roleId}) perms=${role.permissions}`);
-        if (
-          (perms & 8n)          ||  // ADMINISTRATOR
-          (perms & 4n)          ||  // BAN_MEMBERS
-          (perms & 2n)          ||  // KICK_MEMBERS
-          (perms & 32n)         ||  // MANAGE_GUILD
-          (perms & 268435456n)      // MANAGE_ROLES
-        ) {
-          console.log(`[PERMS] ALLOWED via role "${role.name}"`);
+        if ((perms & 8n) || (perms & 4n) || (perms & 2n) || (perms & 32n) || (perms & 268435456n))
           return true;
-        }
       } catch (_) {}
     }
 
-    console.log('[PERMS] DENIED — no matching role with required perms');
-    return false;
+    // Varianta 2: calculeaza din roluri
+    const perms = await getPermBits(api, guildId, member?.roles);
+    return !!(
+      (perms & 8n) ||          // ADMINISTRATOR
+      (perms & 4n) ||          // BAN_MEMBERS
+      (perms & 2n) ||          // KICK_MEMBERS
+      (perms & 32n) ||         // MANAGE_GUILD
+      (perms & 268435456n)     // MANAGE_ROLES
+    );
   } catch (err) {
     console.error('[PERMS ERROR]', err.message);
     return false;
   }
+}
+
+// Verifica daca autorul poate actiona asupra target-ului
+// Reguli: nu poti actiona asupra ta insuti, nu poti actiona asupra owner-ului,
+// nu poti actiona asupra cuiva cu rol mai mare sau egal cu al tau
+async function canTarget(api, guildId, authorMessage, targetId) {
+  // Nu poti actiona asupra ta insuti
+  if (authorMessage.author.id === targetId) return { ok: false, reason: "You can't use this command on yourself." };
+
+  // Nu poti actiona asupra owner-ului botului
+  if (isOwner(targetId)) return { ok: false, reason: "You can't use this command on the bot owner." };
+
+  // Fetch member-ul target ca sa ii obtinem rolurile
+  const targetMember = await api.guilds.getMember(guildId, targetId).catch(() => null);
+  if (!targetMember) return { ok: true }; // daca nu e in server (ex: unban), permite
+
+  // Daca target-ul e owner al serverului, nu poti actiona
+  const guild = await api.get(`/guilds/${guildId}`).catch(() => null);
+  if (guild?.owner_id === targetId) return { ok: false, reason: "You can't use this command on the server owner." };
+
+  // Compara puterea rolurilor
+  const authorPower = await getRolePower(api, guildId, authorMessage.member?.roles);
+  const targetPower = await getRolePower(api, guildId, targetMember.roles);
+
+  if (targetPower >= authorPower) return { ok: false, reason: "You can't use this command on someone with a higher or equal role." };
+
+  return { ok: true };
 }
 
 async function handleMessage(api, message) {
@@ -104,28 +141,15 @@ async function handleMessage(api, message) {
       const rolesData     = await api.get(`/guilds/${message.guild_id}/roles`);
       const allRoles      = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
       const memberRoleIds = new Set((message.member?.roles || []).map(r => String(r)));
-
       const lines = allRoles.map(r => {
         const mine = memberRoleIds.has(String(r.id)) ? '[YOU]' : '     ';
         return `${mine} ${r.name.padEnd(25)} ${r.permissions}`;
       });
-
-      console.log('[DEBUGROLES] member.roles:', [...memberRoleIds]);
-      console.log('[DEBUGROLES]\n' + lines.join('\n'));
-
-      const output = [
-        `**Rolurile tale:** ${[...memberRoleIds].join(', ') || '(none)'}`,
-        '```',
-        lines.join('\n').slice(0, 1500),
-        '```'
-      ].join('\n');
-
-      await api.channels.createMessage(message.channel_id, { content: output });
-    } catch (err) {
-      console.error('[DEBUGROLES ERROR]', err.message);
       await api.channels.createMessage(message.channel_id, {
-        content: '❌ Eroare la debugroles: `' + err.message + '`'
+        content: `**Your roles:** ${[...memberRoleIds].join(', ') || '(none)'}\n\`\`\`\n${lines.join('\n').slice(0, 1500)}\n\`\`\``
       });
+    } catch (err) {
+      await api.channels.createMessage(message.channel_id, { content: `❌ debugroles error: \`${err.message}\`` });
     }
     return;
   }
@@ -135,20 +159,19 @@ async function handleMessage(api, message) {
   const cmd = commands.get(cmdName);
   if (!cmd) return;
 
+  // Check permisiuni
   if (cmd.permissions && !isOwner(message.author.id)) {
     const allowed = await memberHasPermission(api, message.guild_id, message);
     if (!allowed) {
       await api.channels.createMessage(message.channel_id, {
-        content: '❌ Nu ai permisiuni. Ai nevoie de Administrator, Ban Members, Kick Members sau Manage Server.'
+        content: '❌ You need Administrator, Ban Members, Kick Members, or Manage Server to use this command.'
       });
       return;
     }
   }
 
   if (cmd.ownerOnly && !isOwner(message.author.id)) {
-    await api.channels.createMessage(message.channel_id, {
-      content: '❌ Doar owner-ul botului poate folosi această comandă.'
-    });
+    await api.channels.createMessage(message.channel_id, { content: '❌ Bot owner only.' });
     return;
   }
 
@@ -160,11 +183,12 @@ async function handleMessage(api, message) {
       guildId:   message.guild_id,
       channelId: message.channel_id,
       author:    message.author,
+      canTarget: (targetId) => canTarget(api, message.guild_id, message, targetId),
     });
   } catch (err) {
     console.error(`[CMD ERROR] ${cmdName}:`, err.message);
     await api.channels.createMessage(message.channel_id, {
-      content: '❌ Eroare: ' + err.message
+      content: `❌ Error: ${err.message}`
     }).catch(() => {});
   }
 }
