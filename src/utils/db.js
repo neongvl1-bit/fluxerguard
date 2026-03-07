@@ -59,7 +59,12 @@ async function getSettings(guildId) {
 }
 
 async function updateSettings(guildId, patch) {
-  await supabase.from('guild_settings').upsert({ guild_id: guildId, ...patch, updated_at: new Date().toISOString() });
+  const { data: existing } = await supabase.from('guild_settings').select('guild_id').eq('guild_id', guildId).single();
+  if (existing) {
+    await supabase.from('guild_settings').update({ ...patch, updated_at: new Date().toISOString() }).eq('guild_id', guildId);
+  } else {
+    await supabase.from('guild_settings').insert({ guild_id: guildId, ...patch, updated_at: new Date().toISOString() });
+  }
   settingsCache.delete(guildId);
   return getSettings(guildId);
 }
