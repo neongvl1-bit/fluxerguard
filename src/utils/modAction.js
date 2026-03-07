@@ -1,33 +1,30 @@
-const { createCase }                    = require('./db');
-const { sendLog }                       = require('./logger');
-const { modConfirm, modDM }             = require('./embeds');
+const { createCase }        = require('./db');
+const { sendLog }           = require('./logger');
+const { modConfirm, modDM } = require('./embeds');
 
-async function doModAction({ api, guildId, channelId, modUser, action, targetUser, reason, duration = null, durationMs = null }) {
+async function doModAction({ api, guildId, channelId, modUser, action, targetUser, reason, duration = null, durationMs = null, msgId = null }) {
   reason = reason || 'No reason provided';
 
-  // 1. Case
   const entry = await createCase(guildId, {
     action, userId: targetUser.id, userTag: targetUser.username,
     modId: modUser.id, modTag: modUser.username,
     reason, duration, auto: false,
   });
 
-  // 2. DM user
+  // DM user
   try {
     const dm = await api.users.createDM(targetUser.id);
-    await api.channels.createMessage(dm.id,
-      modDM(action, `Server`, reason, entry.caseId, modUser.username, duration)
-    );
+    await api.channels.createMessage(dm.id, modDM(action, 'this server', reason, entry.caseId, modUser.username, duration));
   } catch (_) {}
 
-  // 3. Executa actiunea
+  // Executa actiunea
   if (action === 'BAN')       await api.guilds.banUser(guildId, targetUser.id, { reason });
   if (action === 'KICK')      await api.guilds.removeMember(guildId, targetUser.id);
   if (action === 'UNBAN')     await api.guilds.unbanUser(guildId, targetUser.id);
   if (action === 'TIMEOUT')   await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: new Date(Date.now() + durationMs).toISOString() });
   if (action === 'UNTIMEOUT') await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: null });
 
-  // 4. Log
+  // Log
   await sendLog(api, guildId, action, {
     'User':      `${targetUser.username} (${targetUser.id})`,
     'Moderator': modUser.username,
@@ -36,8 +33,10 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
     ...(duration ? { 'Duration': duration } : {}),
   }, entry);
 
-  // 5. Confirm in canal
-  await api.channels.createMessage(channelId, modConfirm(action, targetUser, reason, entry.caseId, duration));
+  // Reply in canal
+  const payload = { ...modConfirm(action, targetUser, reason, entry.caseId, duration) };
+  if (msgId) payload.message_reference = { message_id: msgId };
+  await api.channels.createMessage(channelId, payload);
 
   console.log(`[MOD] ${action} — ${targetUser.username} (${entry.caseId})`);
   return entry;
