@@ -20,7 +20,7 @@ const setprefix = { name: 'setprefix', names: ['setprefix'], permissions: true,
   }
 };
 
-// ── SETLOG ─────────────────────────�����──────────────────────────────────────────
+// ── SETLOG ─────────────────────────�������──────────────────────────────────────────
 const setlog = { name: 'setlog', names: ['setlog'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
     const id = args[0] ? resolveId(args[0]) : channelId;
