@@ -1,107 +1,64 @@
-const { rolesCache, privilegeCache, ownerCache } = require('./cache');
+const { rolesCache } = require('./cache');
 
-const PRIVILEGED_BITS = [
-  8n,      // Administrator
-  4n,      // Ban Members
-  2n,      // Kick Members
-  32n,     // Manage Messages
-  32768n,  // Manage Roles
-  16n,     // Manage Guild
-  8192n,   // Manage Channels
-];
+const PRIVILEGED_BITS = [8n, 4n, 2n, 32n, 32768n, 16n, 8192n];
 
+// Owner cache
+const ownerIds = new Map();
 function setOwner(guildId, ownerId) {
-  ownerCache.set(String(guildId), String(ownerId));
+  ownerIds.set(String(guildId), String(ownerId));
 }
 
-function checkPerms(roles, memberRoleIds) {
+// Fetch roluri cu cache
+async function getGuildRoles(api, guildId) {
+  let roles = rolesCache.get(String(guildId));
+  if (!roles) {
+    const data = await api.guilds.getRoles(String(guildId)).catch(() => []);
+    roles = Array.isArray(data) ? data : [];
+    if (roles.length) rolesCache.set(String(guildId), roles);
+  }
+  return roles;
+}
+
+// Verifica daca un set de role IDs contine perms privilegiate
+function hasPrivilege(memberRoleIds, allRoles) {
   const myIds = new Set((memberRoleIds || []).map(String));
-  for (const role of roles) {
+  for (const role of allRoles) {
     if (!myIds.has(String(role.id))) continue;
     try {
-      const perms = BigInt(role.permissions || '0');
+      const p = BigInt(role.permissions || '0');
       for (const bit of PRIVILEGED_BITS) {
-        if ((perms & bit) === bit) return true;
+        if ((p & bit) === bit) return true;
       }
     } catch (_) {}
   }
   return false;
 }
 
-// Verifica din mesaj (pentru antiSpam — zero API calls)
-function isPrivilegedFromMessage(message, guildRoles) {
-  const userId  = String(message.author?.id);
-  const guildId = String(message.guild_id);
-
-  // Owner
-  const ownerId = ownerCache.get(guildId);
-  if (ownerId && ownerId === userId) return true;
-
-  // Permissions calculat direct pe member (daca platforma il pune)
-  if (message.member?.permissions !== undefined && message.member.permissions !== null) {
-    try {
-      const perms = BigInt(message.member.permissions);
-      for (const bit of PRIVILEGED_BITS) {
-        if ((perms & bit) === bit) return true;
-      }
-    } catch (_) {}
-  }
-
-  // Verifica prin roluri
-  if (message.member?.roles?.length && guildRoles?.length) {
-    return checkPerms(guildRoles, message.member.roles);
-  }
-
-  return false;
-}
-
-// Verifica async cu API (pentru antiRaid/antiNuke)
+// Functia principala — folosita de antiRaid si antiNuke
+// memberRoleIds = array de role IDs (optional, daca le avem deja)
 async function isPrivileged(api, guildId, userId, memberRoleIds) {
-  const gId  = String(guildId);
-  const uId  = String(userId);
-  const cKey = `${gId}:${uId}`;
+  const gId = String(guildId);
+  const uId = String(userId);
 
-  // Cache hit
-  const cached = privilegeCache.get(cKey);
-  if (cached !== undefined) return cached;
-
-  const set = (v) => { privilegeCache.set(cKey, v); return v; };
-
-  // Owner check
-  const ownerId = ownerCache.get(gId);
-  if (ownerId && ownerId === uId) return set(true);
+  // Owner bypass
+  if (ownerIds.get(gId) === uId) return true;
 
   try {
-    // Ia rolurile din cache sau API
-    let roles = rolesCache.get(gId);
-    if (!roles) {
-      const data = await api.guilds.getRoles(gId).catch(() => []);
-      roles = Array.isArray(data) ? data : [];
-      if (roles.length) rolesCache.set(gId, roles);
+    const allRoles = await getGuildRoles(api, gId);
+
+    // Daca avem rolurile deja pasate
+    if (memberRoleIds?.length) {
+      return hasPrivilege(memberRoleIds, allRoles);
     }
 
-    // Daca avem role IDs, verifica direct
-    if (memberRoleIds?.length && roles.length) {
-      return set(checkPerms(roles, memberRoleIds));
-    }
-
-    // Altfel ia member
+    // Altfel fetch member
     const member = await api.guilds.getMember(gId, uId).catch(() => null);
     if (member?.roles?.length) {
-      return set(checkPerms(roles, member.roles));
+      return hasPrivilege(member.roles, allRoles);
     }
   } catch (_) {}
 
-  return set(false);
+  return false;
 }
 
-// Preload roluri pentru un guild (apelat la startup)
-async function preloadRoles(api, guildId) {
-  try {
-    const data = await api.guilds.getRoles(String(guildId)).catch(() => []);
-    const roles = Array.isArray(data) ? data : [];
-    if (roles.length) rolesCache.set(String(guildId), roles);
-  } catch (_) {}
-}
-
-module.exports = { isPrivileged, isPrivilegedFromMessage, setOwner, preloadRoles };
+module.exports = { isPrivileged, setOwner, getGuildRoles, hasPrivilege };
