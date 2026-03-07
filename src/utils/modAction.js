@@ -2,7 +2,7 @@ const { createCase }        = require('./db');
 const { sendLog }           = require('./logger');
 const { modConfirm, modDM } = require('./embeds');
 
-async function doModAction({ api, guildId, channelId, modUser, action, targetUser, reason, duration = null, durationMs = null, msgId = null }) {
+async function doModAction({ api, guildId, channelId, modUser, action, targetUser, reason, duration = null, durationMs = null }) {
   reason = reason || 'No reason provided';
 
   const entry = await createCase(guildId, {
@@ -35,7 +35,6 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
 
   // Reply in canal
   const payload = { ...modConfirm(action, targetUser, reason, entry.caseId, duration) };
-  if (msgId) payload.message_reference = { message_id: msgId };
   await api.channels.createMessage(channelId, payload);
 
   console.log(`[MOD] ${action} — ${targetUser.username} (${entry.caseId})`);
