@@ -28,6 +28,7 @@ async function fetchMember(api, guildId, input) {
 // ── BAN ───────────────────────────────────────────────────────────────────────
 const ban = { name: 'ban', names: ['ban'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
+    const mid = message?.id;
     if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!ban <@user|ID> [reason]`\nExample: `!ban @User spamming`'));
     const user = await fetchUser(api, args[0]);
@@ -43,6 +44,7 @@ const ban = { name: 'ban', names: ['ban'], permissions: true,
 // ── KICK ──────────────────────────────────────────────────────────────────────
 const kick = { name: 'kick', names: ['kick'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
+    const mid = message?.id;
     if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!kick <@user|ID> [reason]`\nExample: `!kick @User rule violation`'));
     const member = await fetchMember(api, guildId, args[0]);
@@ -58,6 +60,7 @@ const kick = { name: 'kick', names: ['kick'], permissions: true,
 // ── WARN ──────────────────────────────────────────────────────────────────────
 const warn = { name: 'warn', names: ['warn'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
+    const mid = message?.id;
     if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!warn <@user|ID> <reason>`\nExample: `!warn @User spamming`'));
     const member = await fetchMember(api, guildId, args[0]);
@@ -89,6 +92,7 @@ const warn = { name: 'warn', names: ['warn'], permissions: true,
 // ── UNBAN ─────────────────────────────────────────────────────────────────────
 const unban = { name: 'unban', names: ['unban'], permissions: true,
   async execute({ api, args, guildId, channelId, author, message }) {
+    const mid = message?.id;
     if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!unban <userID> [reason]`\nExample: `!unban 123456789012345678 appeal accepted`'));
     if (!/^\d{10,20}$/.test(args[0])) return send(api, channelId, mid,
@@ -103,6 +107,7 @@ const unban = { name: 'unban', names: ['unban'], permissions: true,
 // ── TIMEOUT ───────────────────────────────────────────────────────────────────
 const timeout = { name: 'timeout', names: ['timeout', 'mute'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
+    const mid = message?.id;
     if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!timeout <@user|ID> <duration> [reason]`\nDurations: `30s` `10m` `2h` `1d`\nExample: `!timeout @User 1h spamming`'));
     const member = await fetchMember(api, guildId, args[0]);
@@ -124,6 +129,7 @@ const timeout = { name: 'timeout', names: ['timeout', 'mute'], permissions: true
 // ── UNTIMEOUT ─────────────────────────────────────────────────────────────────
 const untimeout = { name: 'untimeout', names: ['untimeout', 'unmute'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
+    const mid = message?.id;
     if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!untimeout <@user|ID> [reason]`\nExample: `!untimeout @User appeal accepted`'));
     const member = await fetchMember(api, guildId, args[0]);
@@ -139,6 +145,7 @@ const untimeout = { name: 'untimeout', names: ['untimeout', 'unmute'], permissio
 // ── CASE ──────────────────────────────────────────────────────────────────────
 const caseCmd = { name: 'case', names: ['case'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
+    const mid = message?.id;
     if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage:\n`!case <ID>` — look up a case\n`!case history <@user|ID>` — view history\nExample: `!case CASE-1001`'));
     if (args[0].toLowerCase() === 'history') {
