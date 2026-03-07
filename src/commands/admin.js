@@ -153,7 +153,7 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
 
 // ── HELP ──────────────────────────────────────────────────────────────────────
 const help = { name: 'help', names: ['help'],
-  async execute({ api, guildId, channelId, message }) {
+  async execute({ api, guildId, channelId, args }) {
     const { prefix } = await getSettings(guildId);
     const category = args[0] || null;
     return send(api, channelId, E.helpEmbed(prefix, category));
