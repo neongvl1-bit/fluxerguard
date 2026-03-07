@@ -5,7 +5,7 @@ const fetch     = require('node-fetch');
 const { handleMessage }  = require('./handlers/commandHandler');
 const { handleAntiRaid } = require('./modules/antiRaid');
 const { handleAntiNuke } = require('./modules/antiNuke');
-const { handleAntiSpam, setOwnerForSpam } = require('./modules/antiSpam');
+const { handleAntiSpam } = require('./modules/antiSpam');
 const { isBlacklisted, createCase, getSettings } = require('./utils/db');
 const { setOwner, preloadRoles } = require('./utils/isPrivileged');
 const { rolesCache }  = require('./utils/cache');
@@ -121,7 +121,7 @@ async function dispatch(event, data) {
     }
 
     else if (event === 'GUILD_CREATE') {
-      if (data.id && data.owner_id) { setOwner(data.id, data.owner_id); setOwnerForSpam(data.id, data.owner_id); }
+      if (data.id && data.owner_id) { setOwner(data.id, data.owner_id); }
     }
 
     else if (event === 'GUILD_MEMBER_ADD') {
