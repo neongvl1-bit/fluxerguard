@@ -123,9 +123,10 @@ function configEmbed(g) {
         `Enabled: **${g.antiraid_enabled}** | Trigger: **${g.antiraid_threshold}** joins in **${g.antiraid_interval/1000}s** | Action: **${g.antiraid_action}**\n` +
         `*Actions: \`kick\` \`ban\` \`alert\`*`, false),
       field('💥 AntiNuke',
+        `-# ⚠️ This setting affects critical server protection. Modify with caution.\n` +
         `*Protects against mass channel/role deletion — bans the executor automatically.*\n` +
         `Enabled: **${g.antinuke_enabled}** | Trigger: **${g.antinuke_threshold}** actions in **${g.antinuke_interval/1000}s** | Action: **${g.antinuke_action || 'ban'}**\n` +
-        `*Actions: \`ban\` \`alert\`  -# ⚠️ This setting affects critical server protection. Modify with caution.*`, false),
+        `*Actions: \`ban\` \`alert\`*`, false),
       field('⚠️ AntiSpam',
         `*Prevents message flooding — punishes users who send too many messages fast.*\n` +
         `Enabled: **${g.antispam_enabled}** | Trigger: **${g.antispam_max_msgs}** msgs in **${g.antispam_interval/1000}s** | Action: **${g.antispam_action}**\n` +
