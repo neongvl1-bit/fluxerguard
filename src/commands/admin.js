@@ -180,7 +180,7 @@ const setactivity = { name: 'setactivity', names: ['setactivity', 'setpresence']
     const { api, channelId } = ctx;
     const mid     = ctx.message?.id;
     const args    = ctx.args || [];
-    const { updatePresence } = require('../index');
+    const { updatePresence } = require('../utils/presence');
 
     const types = { playing: 0, streaming: 1, listening: 2, watching: 3 };
     const typeArg = (args[0] || '').toLowerCase();
