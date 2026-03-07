@@ -2,9 +2,8 @@ const { getSettings, updateSettings, getThreatStats, addNote, getNotes, deleteNo
 const E = require('../utils/embeds');
 
 function resolveId(i) { return i ? i.replace(/[<#@!&>]/g, '') : null; }
-const send = (api, channelId, body, msgId = null) => {
+const send = (api, channelId, body) => {
   const payload = typeof body === 'string' ? E.error('Error', body) : { ...body };
-  if (msgId) payload.message_reference = { message_id: msgId };
   return api.channels.createMessage(channelId, payload);
 };
 
@@ -77,7 +76,7 @@ const guardian = { name: 'guardian', names: ['guardian', 'security', 'level'], p
   async execute({ api, guildId, channelId, message }) {
     const g = await getSettings(guildId);
     const { level, score, checks } = calcGuardianLevel(g);
-    return send(api, channelId, E.guardianLevelEmbed(level, score, checks), message.id);
+    return send(api, channelId, E.guardianLevelEmbed(level, score, checks));
   }
 };
 
@@ -86,11 +85,11 @@ const threatlog = { name: 'threatlog', names: ['threatlog', 'threats', 'stats'],
   async execute({ api, guildId, channelId, message }) {
     const allStats = await getThreatStats(guildId, 4);
     if (!allStats.length) return send(api, channelId,
-      E.info('No Data Yet', 'No threats have been logged yet. Stats are tracked weekly.'), message.id);
+      E.info('No Data Yet', 'No threats have been logged yet. Stats are tracked weekly.'));
 
     // Trimite un embed per saptamana (max 4)
     for (const week of allStats) {
-      await send(api, channelId, E.threatLogEmbed(week), message.id);
+      await send(api, channelId, E.threatLogEmbed(week));
     }
   }
 };
@@ -101,7 +100,7 @@ const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true,
     const g = await getSettings(guildId);
 
     if (g.lockdown_enabled) return send(api, channelId,
-      E.error('Already Active', 'Server is already in lockdown. Use `!unlockdown` to lift it.'), message.id);
+      E.error('Already Active', 'Server is already in lockdown. Use `!unlockdown` to lift it.'));
 
     const reason = args.join(' ') || 'Emergency lockdown';
     await updateSettings(guildId, { lockdown_enabled: true, lockdown_reason: reason, lockdown_mod: author.username });
@@ -112,7 +111,7 @@ const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true,
     }
 
     console.log(`[LOCKDOWN] Activated in ${guildId} by ${author.username}`);
-    return send(api, channelId, E.lockdownEmbed(true, reason, author.username), message.id);
+    return send(api, channelId, E.lockdownEmbed(true, reason, author.username));
   }
 };
 
@@ -121,7 +120,7 @@ const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: tru
     const g = await getSettings(guildId);
 
     if (!g.lockdown_enabled) return send(api, channelId,
-      E.error('Not Active', 'Server is not in lockdown.'), message.id);
+      E.error('Not Active', 'Server is not in lockdown.'));
 
     await updateSettings(guildId, { lockdown_enabled: false, lockdown_reason: null, lockdown_mod: null });
 
@@ -130,7 +129,7 @@ const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: tru
     }
 
     console.log(`[LOCKDOWN] Lifted in ${guildId} by ${author.username}`);
-    return send(api, channelId, E.lockdownEmbed(false, '', author.username), message.id);
+    return send(api, channelId, E.lockdownEmbed(false, '', author.username));
   }
 };
 
@@ -143,21 +142,21 @@ const note = { name: 'note', names: ['note'], permissions: true,
     if (sub === 'list') {
       const userId = resolveId(args[1]);
       if (!userId) return send(api, channelId,
-        E.error('Missing User', 'Usage: `!note list <@user|ID>`'), message.id);
+        E.error('Missing User', 'Usage: `!note list <@user|ID>`'));
       const notes = await getNotes(guildId, userId);
-      return send(api, channelId, E.notesListEmbed(userId, notes), message.id);
+      return send(api, channelId, E.notesListEmbed(userId, notes));
     }
 
     // !note delete <id>
     if (sub === 'delete' || sub === 'remove') {
       const noteId = parseInt(args[1]);
       if (!noteId) return send(api, channelId,
-        E.error('Missing Note ID', 'Usage: `!note delete <noteID>`\nGet IDs with `!note list @user`'), message.id);
+        E.error('Missing Note ID', 'Usage: `!note delete <noteID>`\nGet IDs with `!note list @user`'));
       const deleted = await deleteNote(guildId, noteId);
       if (!deleted) return send(api, channelId,
-        E.error('Note Not Found', `No note found with ID **#${noteId}** in this server.`), message.id);
+        E.error('Note Not Found', `No note found with ID **#${noteId}** in this server.`));
       return send(api, channelId,
-        E.success('Note Deleted', `Note **#${noteId}** has been deleted.`), message.id);
+        E.success('Note Deleted', `Note **#${noteId}** has been deleted.`));
     }
 
     // !note @user <text>  (add)
@@ -165,14 +164,14 @@ const note = { name: 'note', names: ['note'], permissions: true,
     if (!userId) return send(api, channelId,
       E.error('Missing Arguments',
         'Usage:\n`!note <@user|ID> <text>` — add a note\n`!note list <@user|ID>` — view notes\n`!note delete <noteID>` — delete a note'
-      ), message.id);
+      ));
 
     const text = args.slice(1).join(' ');
     if (!text) return send(api, channelId,
-      E.error('Missing Note Text', 'Usage: `!note <@user|ID> <text>`\nExample: `!note @User suspicious behavior in #general`'), message.id);
+      E.error('Missing Note Text', 'Usage: `!note <@user|ID> <text>`\nExample: `!note @User suspicious behavior in #general`'));
 
     const saved = await addNote(guildId, userId, text, author.id, author.username);
-    return send(api, channelId, E.noteEmbed({ ...saved, user_id: userId }), message.id);
+    return send(api, channelId, E.noteEmbed({ ...saved, user_id: userId }));
   }
 };
 
