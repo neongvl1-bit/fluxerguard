@@ -9,7 +9,10 @@ async function handleAntiRaid(api, guildId, member) {
   const cfg = await getSettings(guildId);
   if (!cfg.antiraid_enabled) return;
   if (await isWhitelisted(guildId, member.user.id)) return;
-  if (await isPrivileged(api, guildId, member.user.id, member.roles)) return;
+  if (await isPrivileged(api, guildId, member.user.id, member.roles)) {
+    console.log('[ANTIRAID] Bypass —', member.user.id, 'is privileged');
+    return;
+  }
 
   const now = Date.now();
   if (!tracker.has(guildId)) tracker.set(guildId, []);
@@ -27,10 +30,7 @@ async function handleAntiRaid(api, guildId, member) {
       if (s.log_channel) {
         await api.channels.createMessage(s.log_channel, alertEmbed('ANTIRAID',
           `**${recent.length}** users joined in **${cfg.antiraid_interval / 1000}s** — possible raid detected.`,
-          {
-            'Users':     recent.map(j => `\`${j.userId}\``).join(', ').slice(0, 900),
-            'Threshold': `${cfg.antiraid_threshold} joins / ${cfg.antiraid_interval / 1000}s`,
-          }
+          { 'Users': recent.map(j => `\`${j.userId}\``).join(', ').slice(0, 900), 'Threshold': `${cfg.antiraid_threshold} joins / ${cfg.antiraid_interval / 1000}s` }
         )).catch(() => {});
       }
       return;
@@ -43,24 +43,12 @@ async function handleAntiRaid(api, guildId, member) {
       try {
         try {
           const dm = await api.users.createDM(userId);
-          await api.channels.createMessage(dm.id, {
-            content: `🛡️ **Automated Action: ${cfg.antiraid_action.toUpperCase()}**\nReason: ${reason}`
-          });
+          await api.channels.createMessage(dm.id, { content: `🛡️ **Automated Action: ${cfg.antiraid_action.toUpperCase()}**\nReason: ${reason}` });
         } catch (_) {}
         if (cfg.antiraid_action === 'ban') await api.guilds.banUser(guildId, userId, { reason });
         else await api.guilds.removeMember(guildId, userId);
-        const entry = await createCase(guildId, {
-          action: cfg.antiraid_action.toUpperCase(),
-          userId, userTag: userId,
-          modId: 'bot', modTag: 'FluxerGuard',
-          reason, auto: true,
-        });
-        await sendLog(api, guildId, 'ANTIRAID', {
-          'User':    userId,
-          'Action':  cfg.antiraid_action.toUpperCase(),
-          'Trigger': `${recent.length} joins / ${cfg.antiraid_interval / 1000}s`,
-          'Case':    entry.caseId,
-        }, entry);
+        const entry = await createCase(guildId, { action: cfg.antiraid_action.toUpperCase(), userId, userTag: userId, modId: 'bot', modTag: 'FluxerGuard', reason, auto: true });
+        await sendLog(api, guildId, 'ANTIRAID', { 'User': userId, 'Action': cfg.antiraid_action.toUpperCase(), 'Trigger': `${recent.length} joins / ${cfg.antiraid_interval / 1000}s`, 'Case': entry.caseId }, entry);
       } catch (err) { console.error('[ANTIRAID]', err.message); }
     }
   }
