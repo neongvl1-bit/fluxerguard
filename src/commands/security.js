@@ -86,7 +86,7 @@ const threatlog = { name: 'threatlog', names: ['threatlog', 'threats', 'stats'],
 };
 
 // ── LOCKDOWN ──────────────────────────────────────────────────────────────────
-const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true,
+const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adminOnly: true,
   async execute({ api, args, guildId, channelId, author }) {
     const g = await getSettings(guildId);
     if (g.lockdown_enabled) return send(api, channelId,
@@ -100,7 +100,7 @@ const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true,
   }
 };
 
-const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: true,
+const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: true, adminOnly: true,
   async execute({ api, guildId, channelId, author }) {
     const g = await getSettings(guildId);
     if (!g.lockdown_enabled) return send(api, channelId,
