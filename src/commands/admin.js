@@ -174,35 +174,6 @@ const help = { name: 'help', names: ['help'],
 };
 
 
-// ── SETACTIVITY (owner only, stealth) ────────────────────────────────────────
-const setactivity = { name: 'setactivity', names: ['setactivity', 'setpresence'], ownerOnly: true,
-  async execute(ctx) {
-    const { api, channelId } = ctx;
-    const mid     = ctx.message?.id;
-    const args    = ctx.args || [];
-    const { updatePresence } = require('../utils/presence');
-
-    console.log('[SETACTIVITY] called by', ctx.message?.author?.id, 'args:', args);
-
-    const types = { playing: 0, streaming: 1, listening: 2, watching: 3 };
-    const typeArg = (args[0] || '').toLowerCase();
-    const type    = types[typeArg];
-
-    console.log('[SETACTIVITY] typeArg:', typeArg, 'type:', type);
-
-    if (type === undefined) {
-      console.log('[SETACTIVITY] invalid type, returning');
-      return;
-    }
-
-    const text = args.slice(1).join(' ');
-    if (!text) { console.log('[SETACTIVITY] no text'); return; }
-
-    console.log('[SETACTIVITY] calling updatePresence:', text, type);
-    updatePresence(text, type);
-    console.log('[SETACTIVITY] done');
-  }
-};
 
 module.exports = setprefix;
-module.exports.extra = [setlog, whitelist, blacklist, config, help, setactivity];
+module.exports.extra = [setlog, whitelist, blacklist, config, help];
