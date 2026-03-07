@@ -61,12 +61,18 @@ async function getSettings(guildId) {
 async function updateSettings(guildId, patch) {
   const { data: existing } = await supabase.from('guild_settings').select('guild_id').eq('guild_id', guildId).single();
   if (existing) {
-    await supabase.from('guild_settings').update({ ...patch, updated_at: new Date().toISOString() }).eq('guild_id', guildId);
+    const { error } = await supabase.from('guild_settings').update({ ...patch, updated_at: new Date().toISOString() }).eq('guild_id', guildId);
+    if (error) console.error('[DB updateSettings error]', error.message);
   } else {
-    await supabase.from('guild_settings').insert({ guild_id: guildId, ...patch, updated_at: new Date().toISOString() });
+    const { error } = await supabase.from('guild_settings').insert({ guild_id: guildId, ...patch, updated_at: new Date().toISOString() });
+    if (error) console.error('[DB insertSettings error]', error.message);
   }
   settingsCache.delete(guildId);
-  return getSettings(guildId);
+  // Fetch fresh din DB, nu din cache
+  const { data } = await supabase.from('guild_settings').select('*').eq('guild_id', guildId).single();
+  const fresh = { ...DEFAULT(), ...(data || {}), guild_id: guildId };
+  settingsCache.set(guildId, fresh);
+  return fresh;
 }
 
 // ── Cases ─────────────────────────────────────────────────────────────────────
