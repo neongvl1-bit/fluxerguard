@@ -175,6 +175,28 @@ async function handleMessage(api, message) {
     return;
   }
 
+  if (cmd.adminOnly && !isOwner(message.author.id)) {
+    // Verifica daca e server owner sau are Administrator
+    const isServerOwner = message.guild_id && message.member && message.author.id === (await api.guilds.get(message.guild_id).catch(() => ({}))).owner_id;
+    let hasAdmin = false;
+    try {
+      const rolesData = await api.get('/guilds/' + message.guild_id + '/roles');
+      const allRoles  = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
+      const myRoleIds = new Set((message.member?.roles || []).map(String));
+      for (const role of allRoles) {
+        if (String(role.id) === String(message.guild_id) || myRoleIds.has(String(role.id))) {
+          try { if ((BigInt(role.permissions || '0') & 8n) === 8n) { hasAdmin = true; break; } } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    if (!isServerOwner && !hasAdmin) {
+      await api.channels.createMessage(message.channel_id, {
+        content: '❌ You need **Administrator** permission to use this command.'
+      });
+      return;
+    }
+  }
+
   try {
     await cmd.execute({
       api,
