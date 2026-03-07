@@ -28,10 +28,10 @@ async function fetchMember(api, guildId, input) {
 // ── BAN ───────────────────────────────────────────────────────────────────────
 const ban = { name: 'ban', names: ['ban'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
-    if (!args[0]) return send(api, channelId,
+    if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!ban <@user|ID> [reason]`\nExample: `!ban @User spamming`'));
     const user = await fetchUser(api, args[0]);
-    if (!user) return send(api, channelId,
+    if (!user) return send(api, channelId, mid,
       E.error('User Not Found', 'Could not find that user.\nUsage: `!ban <@user|ID> [reason]`'));
     const check = await canTarget(user.id);
     if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
@@ -43,10 +43,10 @@ const ban = { name: 'ban', names: ['ban'], permissions: true,
 // ── KICK ──────────────────────────────────────────────────────────────────────
 const kick = { name: 'kick', names: ['kick'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
-    if (!args[0]) return send(api, channelId,
+    if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!kick <@user|ID> [reason]`\nExample: `!kick @User rule violation`'));
     const member = await fetchMember(api, guildId, args[0]);
-    if (!member) return send(api, channelId,
+    if (!member) return send(api, channelId, mid,
       E.error('Member Not Found', 'That user is not in this server.\nUsage: `!kick <@user|ID> [reason]`'));
     const check = await canTarget(member.user.id);
     if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
@@ -58,15 +58,15 @@ const kick = { name: 'kick', names: ['kick'], permissions: true,
 // ── WARN ──────────────────────────────────────────────────────────────────────
 const warn = { name: 'warn', names: ['warn'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
-    if (!args[0]) return send(api, channelId,
+    if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!warn <@user|ID> <reason>`\nExample: `!warn @User spamming`'));
     const member = await fetchMember(api, guildId, args[0]);
-    if (!member) return send(api, channelId,
+    if (!member) return send(api, channelId, mid,
       E.error('Member Not Found', 'That user is not in this server.\nUsage: `!warn <@user|ID> <reason>`'));
     const check = await canTarget(member.user.id);
     if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
     const reason = args.slice(1).join(' ');
-    if (!reason) return send(api, channelId,
+    if (!reason) return send(api, channelId, mid,
       E.error('Missing Reason', 'A reason is required for warnings.\nUsage: `!warn <@user|ID> <reason>`'));
     const entry = await createCase(guildId, {
       action: 'WARN', userId: member.user.id, userTag: member.user.username,
@@ -89,9 +89,9 @@ const warn = { name: 'warn', names: ['warn'], permissions: true,
 // ── UNBAN ─────────────────────────────────────────────────────────────────────
 const unban = { name: 'unban', names: ['unban'], permissions: true,
   async execute({ api, args, guildId, channelId, author, message }) {
-    if (!args[0]) return send(api, channelId,
+    if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!unban <userID> [reason]`\nExample: `!unban 123456789012345678 appeal accepted`'));
-    if (!/^\d{10,20}$/.test(args[0])) return send(api, channelId,
+    if (!/^\d{10,20}$/.test(args[0])) return send(api, channelId, mid,
       E.error('Invalid ID', 'Please provide a valid numeric user ID.\nUsage: `!unban <userID> [reason]`'));
     const user = await api.users.get(args[0]).catch(() => null);
     if (!user) return send(api, channelId, mid, E.error('User Not Found', 'Could not find a user with that ID.'));
@@ -103,17 +103,17 @@ const unban = { name: 'unban', names: ['unban'], permissions: true,
 // ── TIMEOUT ───────────────────────────────────────────────────────────────────
 const timeout = { name: 'timeout', names: ['timeout', 'mute'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
-    if (!args[0]) return send(api, channelId,
+    if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!timeout <@user|ID> <duration> [reason]`\nDurations: `30s` `10m` `2h` `1d`\nExample: `!timeout @User 1h spamming`'));
     const member = await fetchMember(api, guildId, args[0]);
-    if (!member) return send(api, channelId,
+    if (!member) return send(api, channelId, mid,
       E.error('Member Not Found', 'That user is not in this server.\nUsage: `!timeout <@user|ID> <duration> [reason]`'));
     const check = await canTarget(member.user.id);
     if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
-    if (!args[1]) return send(api, channelId,
+    if (!args[1]) return send(api, channelId, mid,
       E.error('Missing Duration', 'A duration is required.\nValid formats: `30s` `10m` `2h` `1d` *(max 28d)*'));
     const parsed = parseDuration(args[1]);
-    if (!parsed) return send(api, channelId,
+    if (!parsed) return send(api, channelId, mid,
       E.error('Invalid Duration', `\`${args[1]}\` is not a valid duration.\nValid formats: \`30s\` \`10m\` \`2h\` \`1d\` *(max 28d)*`));
     await doModAction({ api, guildId, channelId, modUser: author, action: 'TIMEOUT',
       targetUser: member.user, reason: args.slice(2).join(' ') || 'No reason provided',
@@ -124,10 +124,10 @@ const timeout = { name: 'timeout', names: ['timeout', 'mute'], permissions: true
 // ── UNTIMEOUT ─────────────────────────────────────────────────────────────────
 const untimeout = { name: 'untimeout', names: ['untimeout', 'unmute'], permissions: true,
   async execute({ api, args, guildId, channelId, author, canTarget, message }) {
-    if (!args[0]) return send(api, channelId,
+    if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage: `!untimeout <@user|ID> [reason]`\nExample: `!untimeout @User appeal accepted`'));
     const member = await fetchMember(api, guildId, args[0]);
-    if (!member) return send(api, channelId,
+    if (!member) return send(api, channelId, mid,
       E.error('Member Not Found', 'That user is not in this server.'));
     const check = await canTarget(member.user.id);
     if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
@@ -139,19 +139,19 @@ const untimeout = { name: 'untimeout', names: ['untimeout', 'unmute'], permissio
 // ── CASE ──────────────────────────────────────────────────────────────────────
 const caseCmd = { name: 'case', names: ['case'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
-    if (!args[0]) return send(api, channelId,
+    if (!args[0]) return send(api, channelId, mid,
       E.error('Missing Arguments', 'Usage:\n`!case <ID>` — look up a case\n`!case history <@user|ID>` — view history\nExample: `!case CASE-1001`'));
     if (args[0].toLowerCase() === 'history') {
       const userId = resolveId(args[1]);
-      if (!userId) return send(api, channelId,
+      if (!userId) return send(api, channelId, mid,
         E.error('Missing User', 'Usage: `!case history <@user|ID>`'));
       const cases = await getCasesByUser(guildId, userId);
-      if (!cases.length) return send(api, channelId,
+      if (!cases.length) return send(api, channelId, mid,
         E.success('No Cases Found', `No cases on record for \`${userId}\`.`));
       return send(api, channelId, mid, E.caseHistory(userId, cases));
     }
     const c = await getCaseById(guildId, args[0].toUpperCase());
-    if (!c) return send(api, channelId,
+    if (!c) return send(api, channelId, mid,
       E.error('Case Not Found', `No case found with ID \`${args[0].toUpperCase()}\`.\nUsage: \`!case <ID>\` or \`!case history <@user|ID>\``));
     return send(api, channelId, mid, E.caseEmbed(c));
   }
