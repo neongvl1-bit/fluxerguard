@@ -80,7 +80,7 @@ const guardian = { name: 'guardian', names: ['guardian', 'security', 'level'], p
 const threatlog = { name: 'threatlog', names: ['threatlog', 'threats', 'stats'], permissions: true,
   async execute({ api, guildId, channelId }) {
     const allStats = await getThreatStats(guildId, 4);
-    if (!allStats.length) return send(api, channelId,
+    if (!allStats.length) return send(api, channelId, mid,
       E.info('No Data Yet', 'No threats have been logged yet. Stats are tracked weekly starting from now.'));
     for (const week of allStats) {
       await send(api, channelId, mid, E.threatLogEmbed(week));
@@ -92,7 +92,7 @@ const threatlog = { name: 'threatlog', names: ['threatlog', 'threats', 'stats'],
 const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adminOnly: true,
   async execute({ api, args, guildId, channelId, author, message }) {
     const g = await getSettings(guildId);
-    if (g.lockdown_enabled) return send(api, channelId,
+    if (g.lockdown_enabled) return send(api, channelId, mid,
       E.error('Already Active', 'Server is already in lockdown. Use `!unlockdown` to lift it.'));
     const reason = args.join(' ') || 'Emergency lockdown';
     await updateSettings(guildId, { lockdown_enabled: true, lockdown_reason: reason, lockdown_mod: author.username });
@@ -106,7 +106,7 @@ const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adm
 const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: true, adminOnly: true,
   async execute({ api, guildId, channelId, author }) {
     const g = await getSettings(guildId);
-    if (!g.lockdown_enabled) return send(api, channelId,
+    if (!g.lockdown_enabled) return send(api, channelId, mid,
       E.error('Not Active', 'Server is not currently in lockdown.'));
     await updateSettings(guildId, { lockdown_enabled: false, lockdown_reason: null, lockdown_mod: null });
     const updated = await getSettings(guildId);
@@ -123,7 +123,7 @@ const note = { name: 'note', names: ['note'], permissions: true,
 
     if (sub === 'list') {
       const userId = resolveId(args[1]);
-      if (!userId) return send(api, channelId,
+      if (!userId) return send(api, channelId, mid,
         E.error('Missing User', 'Usage: `!note list <@user|ID>`'));
       const notes = await getNotes(guildId, userId);
       return send(api, channelId, mid, E.notesListEmbed(userId, notes));
@@ -131,22 +131,22 @@ const note = { name: 'note', names: ['note'], permissions: true,
 
     if (sub === 'delete' || sub === 'remove') {
       const noteId = parseInt(args[1]);
-      if (!noteId) return send(api, channelId,
+      if (!noteId) return send(api, channelId, mid,
         E.error('Missing Note ID', 'Usage: `!note delete <noteID>`\nGet IDs with `!note list @user`'));
       const deleted = await deleteNote(guildId, noteId);
-      if (!deleted) return send(api, channelId,
+      if (!deleted) return send(api, channelId, mid,
         E.error('Not Found', `No note found with ID **#${noteId}** in this server.`));
-      return send(api, channelId,
+      return send(api, channelId, mid,
         E.success('Note Deleted', `Note **#${noteId}** has been removed.`));
     }
 
     const userId = resolveId(args[0]);
-    if (!userId) return send(api, channelId,
+    if (!userId) return send(api, channelId, mid,
       E.error('Missing Arguments',
         'Usage:\n`!note <@user|ID> <text>` — add a note\n`!note list <@user|ID>` — view notes\n`!note delete <noteID>` — delete a note'));
 
     const text = args.slice(1).join(' ');
-    if (!text) return send(api, channelId,
+    if (!text) return send(api, channelId, mid,
       E.error('Missing Note Text', 'Usage: `!note <@user|ID> <text>`\nExample: `!note @User suspicious behavior in #general`'));
 
     const saved = await addNote(guildId, userId, text, author.id, author.username);
