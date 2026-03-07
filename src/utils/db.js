@@ -94,6 +94,11 @@ async function getCasesByUser(guildId, userId) {
   return data || [];
 }
 
+async function deleteCase(guildId, caseId) {
+  const { data } = await supabase.from('cases').delete().eq('guild_id', guildId).eq('case_id', caseId.toUpperCase()).select().single();
+  return data;
+}
+
 // ── Whitelist ─────────────────────────────────────────────────────────────────
 const whitelistCache = new Map();
 
@@ -177,7 +182,7 @@ async function deleteNote(guildId, noteId) {
 
 module.exports = {
   getSettings, updateSettings,
-  createCase, getCaseById, getCasesByUser,
+  createCase, getCaseById, getCasesByUser, deleteCase,
   isWhitelisted, addWhitelist, removeWhitelist, getWhitelist,
   isBlacklisted, addBlacklist, removeBlacklist, getBlacklist,
   incrementStat, getThreatStats,
