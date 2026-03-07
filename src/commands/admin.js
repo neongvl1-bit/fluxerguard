@@ -155,7 +155,8 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
 const help = { name: 'help', names: ['help'],
   async execute({ api, guildId, channelId, message }) {
     const { prefix } = await getSettings(guildId);
-    return send(api, channelId, E.helpEmbed(prefix));
+    const category = args[0] || null;
+    return send(api, channelId, E.helpEmbed(prefix, category));
   }
 };
 
