@@ -6,8 +6,11 @@ const E = require('../utils/embeds');
 
 function resolveId(input) { return input ? input.replace(/[<#@!&>]/g, '') : null; }
 
-const send = (api, channelId, body) => {
-  const payload = typeof body === 'string' ? E.error('Error', body) : { ...body };
+const send = (api, channelId, midOrBody, body) => {
+  const mid     = body !== undefined ? midOrBody : null;
+  const content = body !== undefined ? body : midOrBody;
+  const payload = typeof content === 'string' ? E.error('Error', content) : { ...content };
+  if (mid) return api.channels.replyMessage(channelId, mid, payload);
   return api.channels.createMessage(channelId, payload);
 };
 
