@@ -2,41 +2,11 @@ const { getSettings, createCase, isWhitelisted } = require('../utils/db');
 const { sendLog }    = require('../utils/logger');
 const { formatMs }   = require('../utils/duration');
 const { alertEmbed } = require('../utils/embeds');
-const { rolesCache } = require('../utils/cache');
+const { isPrivileged } = require('../utils/isPrivileged');
 
-const PRIVILEGED_BITS = [8n, 4n, 2n, 32n, 32768n, 16n, 8192n];
-
-// Cache owner per guild
-const ownerIds = new Map();
-function setOwnerForSpam(guildId, ownerId) { ownerIds.set(String(guildId), String(ownerId)); }
-
-async function getGuildRoles(api, guildId) {
-  let roles = rolesCache.get(guildId);
-  if (!roles) {
-    const data = await api.guilds.getRoles(guildId).catch(() => []);
-    roles = Array.isArray(data) ? data : [];
-    if (roles.length) rolesCache.set(guildId, roles);
-  }
-  return roles;
-}
-
-function hasPrivilege(memberRoleIds, allRoles) {
-  const myIds = new Set((memberRoleIds || []).map(String));
-  for (const role of allRoles) {
-    if (!myIds.has(String(role.id))) continue;
-    try {
-      const p = BigInt(role.permissions || '0');
-      for (const bit of PRIVILEGED_BITS) {
-        if ((p & bit) === bit) return true;
-      }
-    } catch (_) {}
-  }
-  return false;
-}
-
-// Tracker optimizat
 const tracker  = new Map();
 const cooldown = new Set();
+
 setInterval(() => {
   const now = Date.now();
   for (const [key, msgs] of tracker) {
@@ -50,17 +20,10 @@ async function handleAntiSpam(api, guildId, message) {
   if (message.author?.bot) return;
   if (await isWhitelisted(guildId, message.author.id)) return;
 
-  // Owner bypass
-  if (ownerIds.get(String(guildId)) === String(message.author.id)) return;
-
-  // Privilegii — fetch roluri daca nu sunt in cache
   const memberRoles = message.member?.roles || [];
-  if (memberRoles.length) {
-    const allRoles = await getGuildRoles(api, guildId);
-    if (hasPrivilege(memberRoles, allRoles)) {
-      console.log(`[ANTISPAM] Bypass — ${message.author.username} is privileged`);
-      return;
-    }
+  if (await isPrivileged(api, guildId, message.author.id, memberRoles)) {
+    console.log('[ANTISPAM] Bypass —', message.author.username, 'is privileged');
+    return;
   }
 
   const cfg = await getSettings(guildId);
@@ -77,8 +40,7 @@ async function handleAntiSpam(api, guildId, message) {
   if (cfg.antispam_enabled && recent.length >= cfg.antispam_max_msgs) {
     cooldown.add(key);
     setTimeout(() => cooldown.delete(key), cfg.antispam_interval * 2);
-    await punish(api, guildId, message, cfg,
-      `[AntiSpam] ${recent.length} messages in ${cfg.antispam_interval / 1000}s`);
+    await punish(api, guildId, message, cfg, `[AntiSpam] ${recent.length} messages in ${cfg.antispam_interval / 1000}s`);
     return;
   }
 
@@ -133,4 +95,4 @@ async function punish(api, guildId, message, cfg, reason) {
   } catch (err) { console.error('[ANTISPAM]', err.message); }
 }
 
-module.exports = { handleAntiSpam, setOwnerForSpam };
+module.exports = { handleAntiSpam };
