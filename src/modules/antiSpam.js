@@ -1,4 +1,5 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
+const { isPrivileged } = require('../utils/isPrivileged');
 const { sendLog }    = require('../utils/logger');
 const { formatMs }   = require('../utils/duration');
 const { alertEmbed } = require('../utils/embeds');
@@ -9,6 +10,7 @@ const cooldown = new Set();
 async function handleAntiSpam(api, guildId, message) {
   if (message.author?.bot) return;
   if (await isWhitelisted(guildId, message.author.id)) return;
+  if (await isPrivileged(api, guildId, message.author.id)) return;
   const cfg = await getSettings(guildId);
   if (!cfg.antispam_enabled && !cfg.antiflood_enabled) return;
 
