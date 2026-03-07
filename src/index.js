@@ -39,6 +39,7 @@ const api = {
     fetch:         (channelId)       => api.get(`/channels/${channelId}`),
   },
   guilds: {
+    get:          (guildId)              => api.get(`/guilds/${guildId}`),
     getMember:    (guildId, userId)       => api.get(`/guilds/${guildId}/members/${userId}`),
     getRoles:     (guildId)               => api.get(`/guilds/${guildId}/roles`),
     banUser:      (guildId, userId, body) => api.put(`/guilds/${guildId}/bans/${userId}`, body),
