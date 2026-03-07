@@ -1,5 +1,6 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
-const { sendLog } = require('../utils/logger');
+const { sendLog }    = require('../utils/logger');
+const { alertEmbed } = require('../utils/embeds');
 
 const tracker = new Map();
 
@@ -16,8 +17,23 @@ async function handleAntiRaid(api, guildId, member) {
   tracker.set(guildId, recent);
 
   if (recent.length >= cfg.antiraid_threshold) {
-    console.log(`[ANTIRAID] 🚨 ${recent.length} joins in ${cfg.antiraid_interval / 1000}s — triggering`);
+    console.log(`[ANTIRAID] 🚨 ${recent.length} joins in ${cfg.antiraid_interval / 1000}s — action: ${cfg.antiraid_action}`);
     tracker.set(guildId, []);
+
+    // Alert only — no action taken
+    if (cfg.antiraid_action === 'alert') {
+      const s = await getSettings(guildId);
+      if (s.log_channel) {
+        await api.channels.createMessage(s.log_channel, alertEmbed('ANTIRAID',
+          `**${recent.length}** users joined in **${cfg.antiraid_interval / 1000}s** — possible raid detected.`,
+          {
+            'Users Involved': recent.map(j => `\`${j.userId}\``).join(', ').slice(0, 900),
+            'Threshold':      `${cfg.antiraid_threshold} joins / ${cfg.antiraid_interval / 1000}s`,
+          }
+        )).catch(() => {});
+      }
+      return;
+    }
 
     for (const { userId } of recent) {
       if (await isWhitelisted(guildId, userId)) continue;
@@ -29,22 +45,19 @@ async function handleAntiRaid(api, guildId, member) {
             content: `🛡️ **Automated Action: ${cfg.antiraid_action.toUpperCase()}**\nReason: ${reason}`
           });
         } catch (_) {}
-
         if (cfg.antiraid_action === 'ban') await api.guilds.banUser(guildId, userId, { reason });
         else await api.guilds.removeMember(guildId, userId);
-
         const entry = await createCase(guildId, {
           action: cfg.antiraid_action.toUpperCase(),
           userId, userTag: userId,
           modId: 'bot', modTag: 'FluxerGuard',
           reason, auto: true,
         });
-
         await sendLog(api, guildId, 'ANTIRAID', {
-          'User':   userId,
-          'Action': cfg.antiraid_action.toUpperCase(),
+          'User':    userId,
+          'Action':  cfg.antiraid_action.toUpperCase(),
           'Trigger': `${recent.length} joins / ${cfg.antiraid_interval / 1000}s`,
-          'Case':   entry.caseId,
+          'Case':    entry.caseId,
         }, entry);
       } catch (err) { console.error('[ANTIRAID]', err.message); }
     }
