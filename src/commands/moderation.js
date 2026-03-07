@@ -1,5 +1,5 @@
 const { doModAction }                             = require('../utils/modAction');
-const { createCase, getCasesByUser, getCaseById } = require('../utils/db');
+const { createCase, getCasesByUser, getCaseById, deleteCase } = require('../utils/db');
 const { sendLog }                                 = require('../utils/logger');
 const { parseDuration, formatMs }                 = require('../utils/duration');
 const E = require('../utils/embeds');
