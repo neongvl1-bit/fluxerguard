@@ -159,6 +159,7 @@ function helpEmbed(prefix, category) {
           field('Config & Lists', `\`${p}config\`\n\`${p}whitelist add/remove/list <@user|ID>\`\n\`${p}blacklist add/remove/list <@user|ID>\``, false),
           field('Guardian Systems', `\`${p}guardian\` — security score\n\`${p}threatlog\` — weekly report\n\`${p}lockdown [reason]\`\n\`${p}unlockdown\``, false),
           field('Mod Notes', `\`${p}note <@user|ID> <text>\`\n\`${p}note list <@user|ID>\`\n\`${p}note delete <noteID>\``, false),
+          field('Threat Intelligence', `\`${p}lookup <@user|ID>\` — full user report`, false),
         ]
       },
       setup: {
