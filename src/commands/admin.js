@@ -19,7 +19,7 @@ const setprefix = { name: 'setprefix', names: ['setprefix'], permissions: true,
   }
 };
 
-// ── SETLOG ────────────────────────────────────────────────────────────────────
+// ── SETLOG ───────────────────────────────────────────────────────────���────────
 const setlog = { name: 'setlog', names: ['setlog'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
     const id = args[0] ? resolveId(args[0]) : channelId;
@@ -153,9 +153,17 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
 
 // ── HELP ──────────────────────────────────────────────────────────────────────
 const help = { name: 'help', names: ['help'],
-  async execute({ api, guildId, channelId, args }) {
+  async execute(ctx) {
+    const api       = ctx.api;
+    const guildId   = ctx.guildId;
+    const channelId = ctx.channelId;
+    const message   = ctx.message;
     const { prefix } = await getSettings(guildId);
-    const category = args[0] || null;
+    let category = null;
+    if (message && message.content) {
+      const parts = message.content.trim().split(/\s+/);
+      if (parts.length >= 2) category = parts[1].toLowerCase();
+    }
     return send(api, channelId, E.helpEmbed(prefix, category));
   }
 };
