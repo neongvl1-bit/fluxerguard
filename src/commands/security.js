@@ -2,8 +2,11 @@ const { getSettings, updateSettings, getThreatStats, addNote, getNotes, deleteNo
 const E = require('../utils/embeds');
 
 function resolveId(i) { return i ? i.replace(/[<#@!&>]/g, '') : null; }
-const send = (api, channelId, body) => {
-  const payload = typeof body === 'string' ? E.error('Error', body) : { ...body };
+const send = (api, channelId, midOrBody, body) => {
+  const mid     = body !== undefined ? midOrBody : null;
+  const content = body !== undefined ? body : midOrBody;
+  const payload = typeof content === 'string' ? E.error('Error', content) : { ...content };
+  if (mid) return api.channels.replyMessage(channelId, mid, payload);
   return api.channels.createMessage(channelId, payload);
 };
 
@@ -69,7 +72,7 @@ const guardian = { name: 'guardian', names: ['guardian', 'security', 'level'], p
   async execute({ api, guildId, channelId }) {
     const g = await getSettings(guildId);
     const { level, score, checks } = calcGuardianLevel(g);
-    return send(api, channelId, E.guardianLevelEmbed(level, score, checks));
+    return send(api, channelId, mid, E.guardianLevelEmbed(level, score, checks));
   }
 };
 
@@ -80,14 +83,14 @@ const threatlog = { name: 'threatlog', names: ['threatlog', 'threats', 'stats'],
     if (!allStats.length) return send(api, channelId,
       E.info('No Data Yet', 'No threats have been logged yet. Stats are tracked weekly starting from now.'));
     for (const week of allStats) {
-      await send(api, channelId, E.threatLogEmbed(week));
+      await send(api, channelId, mid, E.threatLogEmbed(week));
     }
   }
 };
 
 // ── LOCKDOWN ──────────────────────────────────────────────────────────────────
 const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adminOnly: true,
-  async execute({ api, args, guildId, channelId, author }) {
+  async execute({ api, args, guildId, channelId, author, message }) {
     const g = await getSettings(guildId);
     if (g.lockdown_enabled) return send(api, channelId,
       E.error('Already Active', 'Server is already in lockdown. Use `!unlockdown` to lift it.'));
@@ -96,7 +99,7 @@ const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adm
     const updated = await getSettings(guildId);
     if (updated.log_channel) api.channels.createMessage(updated.log_channel, E.lockdownEmbed(true, reason, author.username)).catch(() => {});
     console.log(`[LOCKDOWN] Activated in ${guildId} by ${author.username}`);
-    return send(api, channelId, E.lockdownEmbed(true, reason, author.username));
+    return send(api, channelId, mid, E.lockdownEmbed(true, reason, author.username));
   }
 };
 
@@ -109,13 +112,13 @@ const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: tru
     const updated = await getSettings(guildId);
     if (updated.log_channel) api.channels.createMessage(updated.log_channel, E.lockdownEmbed(false, '', author.username)).catch(() => {});
     console.log(`[LOCKDOWN] Lifted in ${guildId} by ${author.username}`);
-    return send(api, channelId, E.lockdownEmbed(false, '', author.username));
+    return send(api, channelId, mid, E.lockdownEmbed(false, '', author.username));
   }
 };
 
 // ── MOD NOTES ─────────────────────────────────────────────────────────────────
 const note = { name: 'note', names: ['note'], permissions: true,
-  async execute({ api, args, guildId, channelId, author }) {
+  async execute({ api, args, guildId, channelId, author, message }) {
     const sub = (args[0] || '').toLowerCase();
 
     if (sub === 'list') {
@@ -123,7 +126,7 @@ const note = { name: 'note', names: ['note'], permissions: true,
       if (!userId) return send(api, channelId,
         E.error('Missing User', 'Usage: `!note list <@user|ID>`'));
       const notes = await getNotes(guildId, userId);
-      return send(api, channelId, E.notesListEmbed(userId, notes));
+      return send(api, channelId, mid, E.notesListEmbed(userId, notes));
     }
 
     if (sub === 'delete' || sub === 'remove') {
@@ -147,7 +150,7 @@ const note = { name: 'note', names: ['note'], permissions: true,
       E.error('Missing Note Text', 'Usage: `!note <@user|ID> <text>`\nExample: `!note @User suspicious behavior in #general`'));
 
     const saved = await addNote(guildId, userId, text, author.id, author.username);
-    return send(api, channelId, E.noteEmbed({ ...saved, user_id: userId }));
+    return send(api, channelId, mid, E.noteEmbed({ ...saved, user_id: userId }));
   }
 };
 
