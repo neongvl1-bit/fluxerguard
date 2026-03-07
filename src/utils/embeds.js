@@ -175,10 +175,28 @@ function configEmbed(g) {
   return embed(COLORS.INFO, `${ICONS.SETTINGS}  FluxerGuard Configuration`,
     `Prefix: \`${g.prefix}\`  •  Log Channel: ${logStr}`,
     [
-      field('🛡️ AntiRaid',  `Enabled: **${g.antiraid_enabled}**\nThreshold: **${g.antiraid_threshold}** joins / **${g.antiraid_interval/1000}s**\nAction: **${g.antiraid_action}**`,  true),
-      field('💥 AntiNuke',  `Enabled: **${g.antinuke_enabled}**\nThreshold: **${g.antinuke_threshold}** actions / **${g.antinuke_interval/1000}s**`,                                   true),
-      field('⚠️ AntiSpam',  `Enabled: **${g.antispam_enabled}**\nMax: **${g.antispam_max_msgs}** msgs / **${g.antispam_interval/1000}s**\nAction: **${g.antispam_action}**`,           true),
-      field('🌊 AntiFlood', `Enabled: **${g.antiflood_enabled}**\nDuplicates: **${g.antiflood_duplicates}**`,                                                                          true),
+      field('🛡️ AntiRaid',
+        `*Detects mass join attacks — when too many users join in a short time, it automatically kicks or bans all of them.*\n` +
+        `Enabled: **${g.antiraid_enabled}** | Trigger: **${g.antiraid_threshold}** joins in **${g.antiraid_interval/1000}s** | Action: **${g.antiraid_action}**\n` +
+        `*Actions: \`kick\` \`ban\` \`alert\` (alert = log only, no action)*`,
+        false),
+      field('💥 AntiNuke',
+        `*Protects against server destruction — if a moderator/bot starts mass-deleting channels or roles, it bans them automatically.*\n` +
+        `Enabled: **${g.antinuke_enabled}** | Trigger: **${g.antinuke_threshold}** destructive actions in **${g.antinuke_interval/1000}s** | Action: **${g.antinuke_action || 'ban'}**\n` +
+        `*Actions: \`ban\` \`alert\` (alert = log only, no action)*`,
+        false),
+      field('⚠️ AntiSpam',
+        `*Prevents message flooding — if a user sends too many messages in a short time, it punishes them automatically.*\n` +
+        `Enabled: **${g.antispam_enabled}** | Trigger: **${g.antispam_max_msgs}** messages in **${g.antispam_interval/1000}s** | Action: **${g.antispam_action}**\n` +
+        `*Actions: \`timeout\` \`kick\` \`ban\` \`alert\` (alert = log only, no action)*`,
+        false),
+      field('🌊 AntiFlood',
+        `*Stops repeated identical messages — if a user spams the same message multiple times, it punishes them.*\n` +
+        `Enabled: **${g.antiflood_enabled}** | Trigger: **${g.antiflood_duplicates}** identical messages | Action: **${g.antispam_action}** *(shares AntiSpam action)*`,
+        false),
+      field('⚙️ How to change settings',
+        '`!config <module> <key> <value>`\nExample: `!config antiraid enabled false` or `!config antispam action ban`',
+        false),
     ]
   );
 }
@@ -216,6 +234,18 @@ function helpEmbed(prefix) {
   );
 }
 
+// ── Alert (no action taken) ───────────────────────────────────────────────────
+function alertEmbed(module, description, fieldsObj) {
+  const fields = Object.entries(fieldsObj).map(([k, v]) => field(k, v, true));
+  fields.push(field('⚠️ Action', '**None taken** — alert only mode. Moderators should review.', false));
+  return embed(
+    COLORS.WARNING,
+    `${ICONS[module] || '🛡️'}  ${module} Alert — Action Required`,
+    description,
+    fields
+  );
+}
+
 // ── List (whitelist/blacklist) ─────────────────────────────────────────────────
 function listEmbed(type, ids) {
   const isWhite = type === 'whitelist';
@@ -234,7 +264,7 @@ function listEmbed(type, ids) {
 
 module.exports = {
   COLORS, ICONS, field,
-  modConfirm, modDM, logEntry, securityAlert,
+  modConfirm, modDM, logEntry, securityAlert, alertEmbed,
   error, success, info,
   warnConfirm, caseEmbed, caseHistory,
   configEmbed, helpEmbed, listEmbed,
