@@ -1,7 +1,7 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
 const { sendLog }    = require('../utils/logger');
 const { formatMs }   = require('../utils/duration');
-const { securityAlert } = require('../utils/embeds');
+const { alertEmbed } = require('../utils/embeds');
 
 const tracker = new Map();
 const cooldown = new Set();
@@ -39,38 +39,57 @@ async function handleAntiSpam(api, guildId, message) {
 }
 
 async function punish(api, guildId, message, cfg, reason) {
-  const user = message.author;
+  const user   = message.author;
+  const action = cfg.antispam_action;
+
+  if (action === 'alert') {
+    const s = await getSettings(guildId);
+    if (s.log_channel) {
+      await api.channels.createMessage(s.log_channel, alertEmbed('ANTISPAM',
+        `**${user.username}** triggered spam detection.`,
+        {
+          'User':    `${user.username} (\`${user.id}\`)`,
+          'Reason':  reason,
+          'Channel': `<#${message.channel_id}>`,
+        }
+      )).catch(() => {});
+    }
+    console.log(`[ANTISPAM] ALERT — ${user.username}`);
+    return;
+  }
+
   try {
-    if (cfg.antispam_action === 'timeout')
+    if (action === 'timeout')
       await api.guilds.editMember(guildId, user.id, { communication_disabled_until: new Date(Date.now() + cfg.antispam_timeout_ms).toISOString() });
-    else if (cfg.antispam_action === 'kick')
+    else if (action === 'kick')
       await api.guilds.removeMember(guildId, user.id);
-    else if (cfg.antispam_action === 'ban')
+    else if (action === 'ban')
       await api.guilds.banUser(guildId, user.id, { reason });
 
     try {
       const dm = await api.users.createDM(user.id);
       await api.channels.createMessage(dm.id, {
-        content: `🚫 **Automated Action: ${cfg.antispam_action.toUpperCase()}**\nReason: ${reason}`
+        content: `🚫 **Automated Action: ${action.toUpperCase()}**\nReason: ${reason}`
       });
     } catch (_) {}
 
     const entry = await createCase(guildId, {
-      action: cfg.antispam_action.toUpperCase(),
+      action: action.toUpperCase(),
       userId: user.id, userTag: user.username,
       modId: 'bot', modTag: 'FluxerGuard',
-      reason, duration: cfg.antispam_action === 'timeout' ? formatMs(cfg.antispam_timeout_ms) : null,
+      reason,
+      duration: action === 'timeout' ? formatMs(cfg.antispam_timeout_ms) : null,
       auto: true,
     });
 
     await sendLog(api, guildId, 'ANTISPAM', {
       'User':   `${user.username} (${user.id})`,
-      'Action': cfg.antispam_action.toUpperCase(),
+      'Action': action.toUpperCase(),
       'Reason': reason,
       'Case':   entry.caseId,
     }, entry);
 
-    console.log(`[ANTISPAM] ${cfg.antispam_action.toUpperCase()} — ${user.username}`);
+    console.log(`[ANTISPAM] ${action.toUpperCase()} — ${user.username}`);
   } catch (err) { console.error('[ANTISPAM]', err.message); }
 }
 
