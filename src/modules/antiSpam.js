@@ -1,16 +1,32 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
-const { isPrivileged } = require('../utils/isPrivileged');
 const { sendLog }    = require('../utils/logger');
 const { formatMs }   = require('../utils/duration');
 const { alertEmbed } = require('../utils/embeds');
+const { isPrivilegedFromMessage } = require('../utils/isPrivileged');
+const { rolesCache } = require('../utils/cache');
 
-const tracker = new Map();
+// Tracker optimizat — se curata automat
+const tracker  = new Map();
 const cooldown = new Set();
+
+// Curata tracker la fiecare 30s ca sa nu creasca memoria
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, msgs] of tracker) {
+    const fresh = msgs.filter(m => now - m.ts < 10000);
+    if (!fresh.length) tracker.delete(key);
+    else tracker.set(key, fresh);
+  }
+}, 30000);
 
 async function handleAntiSpam(api, guildId, message) {
   if (message.author?.bot) return;
   if (await isWhitelisted(guildId, message.author.id)) return;
-  if (await isPrivileged(api, guildId, message.author.id)) return;
+
+  // Bypass privilegiati — zero API calls, din cache
+  const guildRoles = rolesCache.get(guildId) || [];
+  if (isPrivilegedFromMessage(message, guildRoles)) return;
+
   const cfg = await getSettings(guildId);
   if (!cfg.antispam_enabled && !cfg.antiflood_enabled) return;
 
@@ -49,14 +65,9 @@ async function punish(api, guildId, message, cfg, reason) {
     if (s.log_channel) {
       await api.channels.createMessage(s.log_channel, alertEmbed('ANTISPAM',
         `**${user.username}** triggered spam detection.`,
-        {
-          'User':    `${user.username} (\`${user.id}\`)`,
-          'Reason':  reason,
-          'Channel': `<#${message.channel_id}>`,
-        }
+        { 'User': `${user.username} (\`${user.id}\`)`, 'Reason': reason, 'Channel': `<#${message.channel_id}>` }
       )).catch(() => {});
     }
-    console.log(`[ANTISPAM] ALERT — ${user.username}`);
     return;
   }
 
@@ -70,28 +81,19 @@ async function punish(api, guildId, message, cfg, reason) {
 
     try {
       const dm = await api.users.createDM(user.id);
-      await api.channels.createMessage(dm.id, {
-        content: `🚫 **Automated Action: ${action.toUpperCase()}**\nReason: ${reason}`
-      });
+      await api.channels.createMessage(dm.id, { content: `🚫 **Automated Action: ${action.toUpperCase()}**\nReason: ${reason}` });
     } catch (_) {}
 
     const entry = await createCase(guildId, {
-      action: action.toUpperCase(),
-      userId: user.id, userTag: user.username,
-      modId: 'bot', modTag: 'FluxerGuard',
-      reason,
-      duration: action === 'timeout' ? formatMs(cfg.antispam_timeout_ms) : null,
-      auto: true,
+      action: action.toUpperCase(), userId: user.id, userTag: user.username,
+      modId: 'bot', modTag: 'FluxerGuard', reason,
+      duration: action === 'timeout' ? formatMs(cfg.antispam_timeout_ms) : null, auto: true,
     });
 
     await sendLog(api, guildId, 'ANTISPAM', {
-      'User':   `${user.username} (${user.id})`,
-      'Action': action.toUpperCase(),
-      'Reason': reason,
-      'Case':   entry.caseId,
+      'User': `${user.username} (${user.id})`, 'Action': action.toUpperCase(),
+      'Reason': reason, 'Case': entry.caseId,
     }, entry);
-
-    console.log(`[ANTISPAM] ${action.toUpperCase()} — ${user.username}`);
   } catch (err) { console.error('[ANTISPAM]', err.message); }
 }
 
