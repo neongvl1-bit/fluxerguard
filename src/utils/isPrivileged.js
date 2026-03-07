@@ -1,6 +1,3 @@
-// Returneaza true daca userul are permisiuni privilegiate
-// Foloseste API-urile corecte ale Fluxer
-
 const PRIVILEGED_BITS = [
   8n,      // Administrator
   4n,      // Ban Members
@@ -11,51 +8,58 @@ const PRIVILEGED_BITS = [
   8192n,   // Manage Channels
 ];
 
-// Cache ca sa nu facem request la fiecare mesaj
-const cache = new Map(); // key: guildId:userId -> { result, ts }
-const CACHE_TTL = 30000; // 30 secunde
+// Cache 30 secunde
+const cache = new Map();
+const TTL   = 30000;
 
 async function isPrivileged(api, guildId, userId) {
   const key = `${guildId}:${userId}`;
   const now = Date.now();
 
-  // Returneaza din cache daca e proaspat
   if (cache.has(key)) {
     const { result, ts } = cache.get(key);
-    if (now - ts < CACHE_TTL) return result;
+    if (now - ts < TTL) return result;
   }
 
+  const set = (result) => { cache.set(key, { result, ts: now }); return result; };
+
   try {
-    // Ia member
-    const member = await api.guilds.getMember(guildId, userId).catch(() => null);
-    if (!member) {
-      cache.set(key, { result: false, ts: now });
-      return false;
+    // 1. Verifica owner
+    const guild = await api.guilds.get(guildId).catch(() => null);
+    if (guild && String(guild.owner_id) === String(userId)) {
+      console.log(`[PRIVILEGED] ${userId} is server owner — bypass`);
+      return set(true);
     }
 
-    // Ia rolurile serverului
-    const allRoles = await api.guilds.getRoles(guildId).catch(() => []);
-    const roles    = Array.isArray(allRoles) ? allRoles : (allRoles?.roles || []);
+    // 2. Ia member
+    const member = await api.guilds.getMember(guildId, userId).catch(() => null);
+    if (!member) return set(false);
+
+    // 3. Ia rolurile
+    const rolesData = await api.guilds.getRoles(guildId).catch(() => []);
+    const roles     = Array.isArray(rolesData) ? rolesData : [];
     const myRoleIds = new Set((member.roles || []).map(String));
 
     for (const role of roles) {
-      // Everyone role (same id as guild) sau rolurile userului
-      if (String(role.id) === String(guildId) || myRoleIds.has(String(role.id))) {
-        try {
-          const perms = BigInt(role.permissions || '0');
-          for (const bit of PRIVILEGED_BITS) {
-            if ((perms & bit) === bit) {
-              cache.set(key, { result: true, ts: now });
-              return true;
-            }
-          }
-        } catch (_) {}
-      }
-    }
-  } catch (_) {}
+      const isEveryoneRole = String(role.id) === String(guildId);
+      const isMemberRole   = myRoleIds.has(String(role.id));
+      if (!isEveryoneRole && !isMemberRole) continue;
 
-  cache.set(key, { result: false, ts: now });
-  return false;
+      try {
+        const perms = BigInt(role.permissions || '0');
+        for (const bit of PRIVILEGED_BITS) {
+          if ((perms & bit) === bit) {
+            console.log(`[PRIVILEGED] ${userId} has privileged bit ${bit} via role "${role.name}" — bypass`);
+            return set(true);
+          }
+        }
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.error('[PRIVILEGED] Error:', err.message);
+  }
+
+  return set(false);
 }
 
 module.exports = { isPrivileged };
