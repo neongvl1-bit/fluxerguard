@@ -1,28 +1,23 @@
-const { createCase } = require('./db');
-const { sendLog }    = require('./logger');
-
-const COLORS = {
-  BAN: 0xed4245, KICK: 0xff9a3c, WARN: 0xfee75c,
-  TIMEOUT: 0x5b9bd5, UNBAN: 0x57f287, UNTIMEOUT: 0x57f287
-};
+const { createCase }                    = require('./db');
+const { sendLog }                       = require('./logger');
+const { modConfirm, modDM }             = require('./embeds');
 
 async function doModAction({ api, guildId, channelId, modUser, action, targetUser, reason, duration = null, durationMs = null }) {
   reason = reason || 'No reason provided';
 
-  // 1. Creeaza case
+  // 1. Case
   const entry = await createCase(guildId, {
     action, userId: targetUser.id, userTag: targetUser.username,
     modId: modUser.id, modTag: modUser.username,
-    reason, duration, auto: false
+    reason, duration, auto: false,
   });
 
-  // 2. DM catre user (plain text — cel mai compatibil)
+  // 2. DM user
   try {
     const dm = await api.users.createDM(targetUser.id);
-    const durationLine = duration ? `\nDuration: ${duration}` : '';
-    await api.channels.createMessage(dm.id, {
-      content: `🔔 **${action}** in this server\nReason: ${reason}${durationLine}\nCase ID: ${entry.caseId}\nModerator: ${modUser.username}`
-    });
+    await api.channels.createMessage(dm.id,
+      modDM(action, `Server`, reason, entry.caseId, modUser.username, duration)
+    );
   } catch (_) {}
 
   // 3. Executa actiunea
@@ -38,14 +33,11 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
     'Moderator': modUser.username,
     'Reason':    reason,
     'Case ID':   entry.caseId,
-    ...(duration ? { 'Duration': duration } : {})
+    ...(duration ? { 'Duration': duration } : {}),
   }, entry);
 
-  // 5. Reply in canal (plain text)
-  const durationLine = duration ? ` | Duration: **${duration}**` : '';
-  await api.channels.createMessage(channelId, {
-    content: `✅ **${action}** — \`${entry.caseId}\`\nUser: **${targetUser.username}**${durationLine}\nReason: ${reason}`
-  });
+  // 5. Confirm in canal
+  await api.channels.createMessage(channelId, modConfirm(action, targetUser, reason, entry.caseId, duration));
 
   console.log(`[MOD] ${action} — ${targetUser.username} (${entry.caseId})`);
   return entry;
