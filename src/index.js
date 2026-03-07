@@ -83,6 +83,23 @@ function send(op, d) {
   }
 }
 
+let currentPresence = {
+  status: 'online',
+  activities: [{ name: 'FluxerGuard | !help', type: 3 }],
+};
+
+function updatePresence(name, type = 3) {
+  currentPresence = { status: 'online', activities: [{ name, type }] };
+  if (ws?.readyState === WebSocket.OPEN) {
+    send(3, {
+      since: null,
+      activities: [{ name, type }],
+      status: 'online',
+      afk: false,
+    });
+  }
+}
+
 function identify() {
   const intents = INTENTS[intentIndex % INTENTS.length];
   console.log(`[GW] Identifying with intents=${intents}...`);
@@ -90,6 +107,7 @@ function identify() {
     token: TOKEN,
     intents,
     properties: { os: 'linux', browser: 'fluxerguard', device: 'fluxerguard' },
+    presence: currentPresence,
   });
 }
 
@@ -228,3 +246,5 @@ function connect() {
 
 process.on('unhandledRejection', err => console.error('[UNHANDLED]', err?.message || err));
 connect();
+
+module.exports = { updatePresence };
