@@ -1,4 +1,5 @@
 require('dotenv').config();
+const presence = require('./utils/presence');
 const WebSocket = require('ws');
 const fetch     = require('node-fetch');
 
@@ -83,23 +84,6 @@ function send(op, d) {
   }
 }
 
-let currentPresence = {
-  status: 'online',
-  activities: [{ name: 'FluxerGuard | !help', type: 3 }],
-};
-
-function updatePresence(name, type = 3) {
-  currentPresence = { status: 'online', activities: [{ name, type }] };
-  if (ws?.readyState === WebSocket.OPEN) {
-    send(3, {
-      since: null,
-      activities: [{ name, type }],
-      status: 'online',
-      afk: false,
-    });
-  }
-}
-
 function identify() {
   const intents = INTENTS[intentIndex % INTENTS.length];
   console.log(`[GW] Identifying with intents=${intents}...`);
@@ -107,7 +91,7 @@ function identify() {
     token: TOKEN,
     intents,
     properties: { os: 'linux', browser: 'fluxerguard', device: 'fluxerguard' },
-    presence: currentPresence,
+    presence: presence.getPresence(),
   });
 }
 
@@ -189,6 +173,7 @@ function connect() {
   ws = new WebSocket(url);
 
   ws.on('open', () => {
+    presence.init(ws, send);
     reconnecting = false;
     console.log('[GW] Connected');
   });
@@ -247,4 +232,3 @@ function connect() {
 process.on('unhandledRejection', err => console.error('[UNHANDLED]', err?.message || err));
 connect();
 
-module.exports = { updatePresence };
