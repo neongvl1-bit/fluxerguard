@@ -1,5 +1,4 @@
 require('dotenv').config();
-const presence = require('./utils/presence');
 const WebSocket = require('ws');
 const fetch     = require('node-fetch');
 
@@ -91,7 +90,6 @@ function identify() {
     token: TOKEN,
     intents,
     properties: { os: 'linux', browser: 'fluxerguard', device: 'fluxerguard' },
-    presence: presence.getPresence(),
   });
 }
 
@@ -173,7 +171,6 @@ function connect() {
   ws = new WebSocket(url);
 
   ws.on('open', () => {
-    presence.init(ws, send);
     reconnecting = false;
     console.log('[GW] Connected');
   });
