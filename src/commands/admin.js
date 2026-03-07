@@ -79,10 +79,11 @@ const blacklist = { name: 'blacklist', names: ['blacklist', 'bl'], permissions: 
 const CONFIG_HELP = E.info('Configuration Help',
   'Usage: `!config <module> <key> <value>`',
   [
-    E.field('AntiRaid',  '`enabled` true/false\n`threshold` 2–50\n`action` kick/ban',          true),
-    E.field('AntiNuke',  '`enabled` true/false\n`threshold` 1–20',                              true),
-    E.field('AntiSpam',  '`enabled` true/false\n`maxmessages` 3–50\n`action` timeout/kick/ban', true),
-    E.field('AntiFlood', '`enabled` true/false\n`duplicates` 2–20',                             true),
+    E.field('AntiRaid',  '`enabled` true/false\n`threshold` 2–50\n`action` kick/ban/**alert**',              true),
+    E.field('AntiNuke',  '`enabled` true/false\n`threshold` 1–20\n`action` ban/**alert**',                   true),
+    E.field('AntiSpam',  '`enabled` true/false\n`maxmessages` 3–50\n`action` timeout/kick/ban/**alert**',    true),
+    E.field('AntiFlood', '`enabled` true/false\n`duplicates` 2–20\n*(shares AntiSpam action)*',              true),
+    E.field('ℹ️ Alert mode', '`alert` = bot detects the threat but takes **no action** — only sends a warning to the log channel so moderators can decide.', false),
   ]
 );
 
@@ -99,9 +100,9 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
     const toInt  = (v, mn, mx) => { const n = parseInt(v); if (isNaN(n)||n<mn||n>mx) throw new Error(`Must be between ${mn} and ${mx}`); return n; };
     try {
       const p = {};
-      if      (mod==='antiraid')  { if(key==='enabled') p.antiraid_enabled=toBool(value); else if(key==='threshold') p.antiraid_threshold=toInt(value,2,50); else if(key==='action'){if(!['kick','ban'].includes(value))throw new Error('Action must be `kick` or `ban`');p.antiraid_action=value;}else throw new Error(`Unknown key \`${key}\` for antiraid`); }
-      else if (mod==='antinuke')  { if(key==='enabled') p.antinuke_enabled=toBool(value); else if(key==='threshold') p.antinuke_threshold=toInt(value,1,20); else throw new Error(`Unknown key \`${key}\` for antinuke`); }
-      else if (mod==='antispam')  { if(key==='enabled') p.antispam_enabled=toBool(value); else if(key==='maxmessages') p.antispam_max_msgs=toInt(value,3,50); else if(key==='action'){if(!['timeout','kick','ban'].includes(value))throw new Error('Action must be `timeout`, `kick` or `ban`');p.antispam_action=value;}else throw new Error(`Unknown key \`${key}\` for antispam`); }
+      else if (mod==='antiraid')  { if(key==='enabled') p.antiraid_enabled=toBool(value); else if(key==='threshold') p.antiraid_threshold=toInt(value,2,50); else if(key==='action'){if(!['kick','ban','alert'].includes(value))throw new Error('Action must be `kick`, `ban` or `alert`');p.antiraid_action=value;}else throw new Error(`Unknown key \`${key}\` for antiraid`); }
+      else if (mod==='antinuke')  { if(key==='enabled') p.antinuke_enabled=toBool(value); else if(key==='threshold') p.antinuke_threshold=toInt(value,1,20); else if(key==='action'){if(!['ban','alert'].includes(value))throw new Error('Action must be `ban` or `alert`');p.antinuke_action=value;}else throw new Error(`Unknown key \`${key}\` for antinuke`); }
+      else if (mod==='antispam')  { if(key==='enabled') p.antispam_enabled=toBool(value); else if(key==='maxmessages') p.antispam_max_msgs=toInt(value,3,50); else if(key==='action'){if(!['timeout','kick','ban','alert'].includes(value))throw new Error('Action must be `timeout`, `kick`, `ban` or `alert`');p.antispam_action=value;}else throw new Error(`Unknown key \`${key}\` for antispam`); }
       else if (mod==='antiflood') { if(key==='enabled') p.antiflood_enabled=toBool(value); else if(key==='duplicates') p.antiflood_duplicates=toInt(value,2,20); else throw new Error(`Unknown key \`${key}\` for antiflood`); }
       else throw new Error(`Unknown module \`${mod}\`. Valid: \`antiraid\`, \`antinuke\`, \`antispam\`, \`antiflood\``);
       await updateSettings(guildId, p);
