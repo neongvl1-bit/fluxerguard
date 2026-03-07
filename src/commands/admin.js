@@ -110,6 +110,16 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
       else if (k === 'action' && validActions.includes(v)) await updateSettings(guildId, { antiraid_action: v });
       else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `threshold`, `interval`, `action`\nActions: `ban`, `kick`, `alert`'));
     } else if (mod === 'antinuke') {
+      // Avertisment la orice modificare AntiNuke
+      await send(api, channelId, mid, {
+        embeds: [{
+          color: 0xFF8C00,
+          title: '🛡️ AVERTISMENT — Setări AntiNuke',
+          description: '⚠️ **Setările AntiNuke afectează protecția critică a serverului.**\nAcest modul previne distrugerea serverului de către utilizatori rău intenționați.\n\nProcedați cu precauție. Setările incorecte pot lăsa serverul vulnerabil.\n\n*Modificarea va fi aplicată...*',
+          footer: { text: 'FluxerGuard Security' },
+          timestamp: new Date().toISOString(),
+        }]
+      });
       if (k === 'enabled')                          await updateSettings(guildId, { antinuke_enabled: boolVal || !falseV });
       else if (k === 'threshold' && numVal > 0)     await updateSettings(guildId, { antinuke_threshold: numVal });
       else if (k === 'interval'  && numVal > 0)     await updateSettings(guildId, { antinuke_interval: numVal * 1000 });
