@@ -133,7 +133,8 @@ function configEmbed(g) {
       field('🌊 AntiFlood',
         `*Stops repeated identical messages from flooding channels.*\n` +
         `Enabled: **${g.antiflood_enabled}** | Trigger: **${g.antiflood_duplicates}** identical messages | Action: *(shares AntiSpam action)*`, false),
-      field('⚙️ How to change', '`!config <module> <key> <value>`\nExample: `!config antiraid action ban`', false),
+      field('🛡️ Guardian Level', 'Run `!guardian` to see your server security score (0–5).\nIt checks which modules are active and gives tips to improve protection.', false),
+      field('⚙️ How to change', '`!config <module> <key> <value>`\nExample: `!config antiraid action ban`\nRun `!guardian` after changes to see the updated security level.', false),
     ]
   );
 }
