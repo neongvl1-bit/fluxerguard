@@ -155,4 +155,50 @@ const caseCmd = { name: 'case', names: ['case'], permissions: true,
 };
 
 module.exports = ban;
-module.exports.extra = [kick, warn, unban, timeout, untimeout, caseCmd];
+
+// ── DELWARN ───────────────────────────────────────────────────────────────────
+const delwarn = { name: 'delwarn', names: ['delwarn', 'deletewarn', 'unwarn'], permissions: true,
+  async execute({ api, args, guildId, channelId, author, message }) {
+    const mid = message?.id;
+    if (!args[0] || !args[1]) return send(api, channelId, mid,
+      E.error('Missing Arguments', 'Usage: `!delwarn <@user|ID> <caseID>`\nExample: `!delwarn @User CASE-1001`\nUse `!case history @user` to find the case ID.'));
+
+    const userId = resolveId(args[0]);
+    if (!userId) return send(api, channelId, mid,
+      E.error('Invalid User', 'Usage: `!delwarn <@user|ID> <caseID>`'));
+
+    const caseId = args[1].toUpperCase();
+
+    // Verifica ca exista si e un WARN al userului
+    const entry = await getCaseById(guildId, caseId);
+    if (!entry) return send(api, channelId, mid,
+      E.error('Case Not Found', `No case found with ID **${caseId}**.\nUse \`!case history @user\` to see all cases.`));
+
+    if (entry.action !== 'WARN') return send(api, channelId, mid,
+      E.error('Not a Warning', `Case **${caseId}** is a **${entry.action}**, not a WARN.\nThis command only deletes warnings.`));
+
+    if (entry.user_id !== userId) return send(api, channelId, mid,
+      E.error('User Mismatch', `Case **${caseId}** does not belong to that user.`));
+
+    // Sterge din DB
+    const deleted = await deleteCase(guildId, caseId);
+    if (!deleted) return send(api, channelId, mid,
+      E.error('Failed', `Could not delete case **${caseId}**. Please try again.`));
+
+    // Numara warns ramase
+    const remaining = (await getCasesByUser(guildId, userId)).filter(c => c.action === 'WARN').length;
+
+    await sendLog(api, guildId, 'DELWARN', {
+      'User':      `${entry.user_tag} (${userId})`,
+      'Case':      caseId,
+      'Reason':    entry.reason,
+      'Deleted by': `${author.username} (${author.id})`,
+      'Remaining Warns': String(remaining),
+    }, { caseId, action: 'DELWARN' });
+
+    return send(api, channelId, mid,
+      E.success('Warning Deleted', `Warning **${caseId}** has been removed from **${entry.user_tag}**.\n*Remaining warnings: **${remaining}***`));
+  }
+};
+
+module.exports.extra = [kick, warn, unban, timeout, untimeout, caseCmd, delwarn];
