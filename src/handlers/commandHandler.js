@@ -46,8 +46,8 @@ async function getPermBits(api, guildId, memberRoles) {
 // Returneaza "puterea" unui user: suma pozitiilor rolurilor sale (mai mare = mai puternic)
 async function getRolePower(api, guildId, memberRoles) {
   try {
-    const rolesData = await api.get(`/guilds/${guildId}/roles`);
-    const allRoles  = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
+    const rolesData = await api.guilds.getRoles(guildId);
+    const allRoles  = Array.isArray(rolesData) ? rolesData : [];
     const myRoleIds = new Set((memberRoles || []).map(String));
     let power = 0;
     for (const role of allRoles) {
@@ -106,10 +106,15 @@ async function canTarget(api, guildId, authorMessage, targetId) {
   if (guild?.owner_id === targetId) return { ok: false, reason: "You can't use this command on the server owner." };
 
   // Compara puterea rolurilor
-  const authorPower = await getRolePower(api, guildId, authorMessage.member?.roles);
-  const targetPower = await getRolePower(api, guildId, targetMember.roles);
-
-  if (targetPower >= authorPower) return { ok: false, reason: "You can't use this command on someone with a higher or equal role." };
+  // Bot owner poate targeta oricine
+  // Altfel verifica ierarhia de roluri
+  if (!isOwner(authorMessage.author.id)) {
+    const authorPower = await getRolePower(api, guildId, authorMessage.member?.roles);
+    const targetPower = await getRolePower(api, guildId, targetMember.roles);
+    if (targetPower >= authorPower) {
+      return { ok: false, reason: "You can't target someone with an equal or higher role than you." };
+    }
+  }
 
   return { ok: true };
 }
