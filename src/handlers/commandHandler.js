@@ -97,23 +97,21 @@ async function canTarget(api, guildId, authorMessage, targetId) {
   // Nu poti actiona asupra owner-ului botului
   if (isOwner(targetId)) return { ok: false, reason: "You can't use this command on the bot owner." };
 
-  // Fetch member-ul target ca sa ii obtinem rolurile
+  // Fetch member-ul target
   const targetMember = await api.guilds.getMember(guildId, targetId).catch(() => null);
   if (!targetMember) return { ok: true }; // daca nu e in server (ex: unban), permite
 
-  // Daca target-ul e owner al serverului, nu poti actiona
-  const guild = await api.get(`/guilds/${guildId}`).catch(() => null);
-  if (guild?.owner_id === targetId) return { ok: false, reason: "You can't use this command on the server owner." };
+  // Nu poti actiona asupra owner-ului serverului
+  const { ownerCache } = require('./utils/cache');
+  const ownerId = ownerCache.get ? ownerCache.get(String(guildId)) : null;
+  if (ownerId && String(ownerId) === String(targetId)) {
+    return { ok: false, reason: "You can't use this command on the server owner." };
+  }
 
-  // Compara puterea rolurilor
-  // Bot owner poate targeta oricine
-  // Altfel verifica ierarhia de roluri
-  if (!isOwner(authorMessage.author.id)) {
-    const authorPower = await getRolePower(api, guildId, authorMessage.member?.roles);
-    const targetPower = await getRolePower(api, guildId, targetMember.roles);
-    if (targetPower >= authorPower) {
-      return { ok: false, reason: "You can't target someone with an equal or higher role than you." };
-    }
+  // Nu poti actiona asupra unui user cu permisiuni privilegiate (admin, ban, kick, etc.)
+  const { isPrivileged } = require('./utils/isPrivileged');
+  if (await isPrivileged(api, guildId, targetId, targetMember.roles)) {
+    return { ok: false, reason: "You can't use this command on someone with administrative permissions." };
   }
 
   return { ok: true };
