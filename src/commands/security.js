@@ -151,6 +151,132 @@ const note = { name: 'note', names: ['note'], permissions: true,
   }
 };
 
+
+// ── LOOKUP ────────────────────────────────────────────────────────────────────
+const lookup = { name: 'lookup', names: ['lookup', 'whois'], permissions: true,
+  async execute(ctx) {
+    const { api, guildId, channelId } = ctx;
+    const mid  = ctx.message?.id;
+    const args = ctx.args || [];
+
+    const userId = resolveId(args[0]);
+    if (!userId) return api.channels.replyMessage(channelId, mid,
+      E.error('Missing User', 'Usage: `!lookup <@user|ID>`'));
+
+    // Fetch user si member
+    const user   = await api.users.get(userId).catch(() => null);
+    const member = await api.guilds.getMember(guildId, userId).catch(() => null);
+
+    if (!user) return api.channels.replyMessage(channelId, mid,
+      E.error('User Not Found', `Could not find user with ID \`${userId}\`.`));
+
+    // Calculeaza vechimea contului din ID (Snowflake)
+    const EPOCH        = 1640995200000n; // Fluxer epoch (aproximativ)
+    const DISCORD_EPOCH = 1420070400000n;
+    let accountAge = 'Unknown';
+    let accountCreated = 'Unknown';
+    try {
+      const ms = (BigInt(userId) >> 22n) + DISCORD_EPOCH;
+      const date = new Date(Number(ms));
+      const now  = Date.now();
+      const days = Math.floor((now - Number(ms)) / 86400000);
+      accountCreated = date.toISOString().split('T')[0];
+      accountAge = days < 1 ? 'Today' : days < 30 ? `${days} days` : days < 365 ? `${Math.floor(days/30)} months` : `${Math.floor(days/365)}y ${Math.floor((days%365)/30)}m`;
+    } catch (_) {}
+
+    // Join date
+    let joinedAt = 'Unknown';
+    let joinDays = null;
+    if (member?.joined_at) {
+      const jDate = new Date(member.joined_at);
+      joinedAt = jDate.toISOString().split('T')[0];
+      joinDays = Math.floor((Date.now() - jDate.getTime()) / 86400000);
+    }
+
+    // Cases din DB
+    const { getCasesByUser } = require('../utils/db');
+    const cases = await getCasesByUser(guildId, userId).catch(() => []);
+    const bans     = cases.filter(c => c.action === 'BAN').length;
+    const kicks    = cases.filter(c => c.action === 'KICK').length;
+    const warns    = cases.filter(c => c.action === 'WARN').length;
+    const timeouts = cases.filter(c => c.action === 'TIMEOUT').length;
+    const lastCases = cases.slice(0, 3);
+
+    // Notes
+    const { getNotes } = require('../utils/db');
+    const notes = await getNotes(guildId, userId).catch(() => []);
+
+    // Whitelist / Blacklist
+    const { isWhitelisted, isBlacklisted } = require('../utils/db');
+    const wl = await isWhitelisted(guildId, userId).catch(() => false);
+    const bl = await isBlacklisted(guildId, userId).catch(() => false);
+
+    // Risk score
+    let risk = 0;
+    let riskLabel = '';
+    if (bl)       risk += 50;
+    if (bans > 0) risk += bans * 15;
+    if (kicks > 0) risk += kicks * 10;
+    if (warns > 0) risk += warns * 5;
+    if (joinDays !== null && joinDays < 7) risk += 10;
+
+    if (risk >= 50)      riskLabel = '🔴 High Risk';
+    else if (risk >= 25) riskLabel = '🟡 Medium Risk';
+    else if (risk >= 10) riskLabel = '🟠 Low Risk';
+    else                 riskLabel = '🟢 Clean';
+
+    // Flags
+    const flags = [];
+    if (bl)                                    flags.push('🚫 Blacklisted');
+    if (wl)                                    flags.push('✅ Whitelisted');
+    if (joinDays !== null && joinDays < 7)      flags.push('🆕 New Member');
+    if (member?.communication_disabled_until)  flags.push('🔇 Currently Timed Out');
+    if (!member)                                flags.push('⚠️ Not in Server');
+
+    const color = risk >= 50 ? 0xED4245 : risk >= 25 ? 0xFFC107 : risk >= 10 ? 0xFF8C00 : 0x43B581;
+
+    const fields = [
+      { name: '👤 User', value: `\`${user.username}\` (\`${userId}\`)`, inline: true },
+      { name: '⚠️ Risk', value: `${riskLabel} (${risk}pts)`, inline: true },
+      { name: '📅 Account Created', value: `${accountCreated}
+*(${accountAge} ago)*`, inline: true },
+      { name: '📥 Joined Server', value: member ? `${joinedAt}
+*(${joinDays} days ago)*` : '*Not in server*', inline: true },
+      { name: '📋 Cases', value: `🔨 Bans: **${bans}** | 👟 Kicks: **${kicks}**
+⚠️ Warns: **${warns}** | 🔇 Timeouts: **${timeouts}**`, inline: false },
+    ];
+
+    if (flags.length) {
+      fields.push({ name: '🚩 Flags', value: flags.join('  '), inline: false });
+    }
+
+    if (notes.length) {
+      fields.push({ name: `📝 Notes (${notes.length})`, value: notes.slice(0, 2).map(n => `• ${n.note.slice(0, 80)}`).join('\n'), inline: false });
+    }
+
+    if (lastCases.length) {
+      fields.push({
+        name: '🕒 Recent Cases',
+        value: lastCases.map(c => `\`${c.case_id}\` **${c.action}** — ${(c.reason || '').slice(0, 50)}`).join('\n'),
+        inline: false
+      });
+    }
+
+    const payload = {
+      embeds: [{
+        color,
+        title: `🔍  Lookup — ${user.username}`,
+        fields,
+        footer: { text: 'FluxerGuard' },
+        timestamp: new Date().toISOString(),
+      }]
+    };
+
+    if (mid) return api.channels.replyMessage(channelId, mid, payload);
+    return api.channels.createMessage(channelId, payload);
+  }
+};
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 module.exports = guardian;
-module.exports.extra = [threatlog, lockdown, unlockdown, note];
+module.exports.extra = [threatlog, lockdown, unlockdown, note, lookup];
