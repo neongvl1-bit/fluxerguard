@@ -1,4 +1,5 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
+const { isPrivileged } = require('../utils/isPrivileged');
 const { sendLog }    = require('../utils/logger');
 const { alertEmbed } = require('../utils/embeds');
 
@@ -8,6 +9,7 @@ async function handleAntiNuke(api, guildId, eventName, executorId) {
   const cfg = await getSettings(guildId);
   if (!cfg.antinuke_enabled || !executorId) return;
   if (await isWhitelisted(guildId, executorId)) return;
+  if (await isPrivileged(api, guildId, executorId)) return;
 
   const key = `${guildId}:${executorId}`, now = Date.now();
   if (!tracker.has(key)) tracker.set(key, []);
