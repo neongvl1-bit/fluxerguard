@@ -38,6 +38,7 @@ const api = {
 
   channels: {
     createMessage: (channelId, body) => api.post(`/channels/${channelId}/messages`, body),
+    replyMessage:  (channelId, messageId, body) => api.post(`/channels/${channelId}/messages`, { ...body, message_reference: { message_id: messageId } }),
     fetch:         (channelId)       => api.get(`/channels/${channelId}`),
   },
   guilds: {
