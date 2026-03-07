@@ -6,7 +6,7 @@ const { handleMessage }  = require('./handlers/commandHandler');
 const { handleAntiRaid } = require('./modules/antiRaid');
 const { handleAntiNuke } = require('./modules/antiNuke');
 const { handleAntiSpam } = require('./modules/antiSpam');
-const { isBlacklisted, createCase } = require('./utils/db');
+const { isBlacklisted, createCase, getSettings } = require('./utils/db');
 const { sendLog } = require('./utils/logger');
 
 const TOKEN    = process.env.FLUXER_BOT_TOKEN;
@@ -131,6 +131,7 @@ async function dispatch(event, data) {
         await sendLog(api, guildId, 'BAN', { 'User': `${data.user.username} (${userId})`, 'Reason': reason, 'Case': entry.caseId }, entry);
         return;
       }
+      // Lockdown — kick orice user nou
       await handleAntiRaid(api, guildId, data);
     }
 
