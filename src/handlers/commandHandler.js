@@ -174,8 +174,7 @@ async function handleMessage(api, message) {
   }
 
   if (cmd.ownerOnly && !isOwner(message.author.id)) {
-    await api.channels.createMessage(message.channel_id, { content: '❌ Bot owner only.' });
-    return;
+    return; // stealth
   }
 
   if (cmd.adminOnly && !isOwner(message.author.id)) {
