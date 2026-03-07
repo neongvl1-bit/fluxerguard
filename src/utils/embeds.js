@@ -126,7 +126,7 @@ function configEmbed(g) {
         `*Protects against mass channel/role deletion — bans the executor automatically.*\n` +
         `Enabled: **${g.antinuke_enabled}** | Trigger: **${g.antinuke_threshold}** actions in **${g.antinuke_interval/1000}s** | Action: **${g.antinuke_action || 'ban'}**\n` +
         `*Actions: \`ban\` \`alert\`*\n` +
-        `⚠️ *These settings affect critical server protection. Modify with caution.*`, false),
+        `-# ⚠️ These settings affect critical server protection. Modify with caution.`, false),
       field('⚠️ AntiSpam',
         `*Prevents message flooding — punishes users who send too many messages fast.*\n` +
         `Enabled: **${g.antispam_enabled}** | Trigger: **${g.antispam_max_msgs}** msgs in **${g.antispam_interval/1000}s** | Action: **${g.antispam_action}**\n` +
