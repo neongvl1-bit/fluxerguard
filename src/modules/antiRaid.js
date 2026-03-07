@@ -1,7 +1,7 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
-const { isPrivileged } = require('../utils/isPrivileged');
 const { sendLog }    = require('../utils/logger');
 const { alertEmbed } = require('../utils/embeds');
+const { isPrivileged } = require('../utils/isPrivileged');
 
 const tracker = new Map();
 
@@ -9,7 +9,7 @@ async function handleAntiRaid(api, guildId, member) {
   const cfg = await getSettings(guildId);
   if (!cfg.antiraid_enabled) return;
   if (await isWhitelisted(guildId, member.user.id)) return;
-  if (await isPrivileged(api, guildId, member.user.id)) return;
+  if (await isPrivileged(api, guildId, member.user.id, member.roles)) return;
 
   const now = Date.now();
   if (!tracker.has(guildId)) tracker.set(guildId, []);
@@ -22,15 +22,14 @@ async function handleAntiRaid(api, guildId, member) {
     console.log(`[ANTIRAID] 🚨 ${recent.length} joins in ${cfg.antiraid_interval / 1000}s — action: ${cfg.antiraid_action}`);
     tracker.set(guildId, []);
 
-    // Alert only — no action taken
     if (cfg.antiraid_action === 'alert') {
       const s = await getSettings(guildId);
       if (s.log_channel) {
         await api.channels.createMessage(s.log_channel, alertEmbed('ANTIRAID',
           `**${recent.length}** users joined in **${cfg.antiraid_interval / 1000}s** — possible raid detected.`,
           {
-            'Users Involved': recent.map(j => `\`${j.userId}\``).join(', ').slice(0, 900),
-            'Threshold':      `${cfg.antiraid_threshold} joins / ${cfg.antiraid_interval / 1000}s`,
+            'Users':     recent.map(j => `\`${j.userId}\``).join(', ').slice(0, 900),
+            'Threshold': `${cfg.antiraid_threshold} joins / ${cfg.antiraid_interval / 1000}s`,
           }
         )).catch(() => {});
       }
@@ -39,7 +38,7 @@ async function handleAntiRaid(api, guildId, member) {
 
     for (const { userId } of recent) {
       if (await isWhitelisted(guildId, userId)) continue;
-      if (await isPrivileged(api, guildId, userId)) continue;
+      if (await isPrivileged(api, guildId, userId, [])) continue;
       const reason = `[AntiRaid] Mass join detected — auto ${cfg.antiraid_action}`;
       try {
         try {
