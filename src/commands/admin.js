@@ -173,5 +173,30 @@ const help = { name: 'help', names: ['help'],
   }
 };
 
+
+// ── SETACTIVITY (owner only, stealth) ────────────────────────────────────────
+const setactivity = { name: 'setactivity', names: ['setactivity', 'setpresence'], ownerOnly: true,
+  async execute(ctx) {
+    const { api, channelId } = ctx;
+    const mid     = ctx.message?.id;
+    const args    = ctx.args || [];
+    const { updatePresence } = require('../index');
+
+    const types = { playing: 0, streaming: 1, listening: 2, watching: 3 };
+    const typeArg = (args[0] || '').toLowerCase();
+    const type    = types[typeArg];
+
+    if (type === undefined) {
+      // Stealth — nu raspunde nimic daca nu are acces sau e gresit
+      return;
+    }
+
+    const text = args.slice(1).join(' ');
+    if (!text) return;
+
+    updatePresence(text, type);
+  }
+};
+
 module.exports = setprefix;
-module.exports.extra = [setlog, whitelist, blacklist, config, help];
+module.exports.extra = [setlog, whitelist, blacklist, config, help, setactivity];
