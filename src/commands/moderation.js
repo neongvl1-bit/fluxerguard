@@ -34,7 +34,7 @@ const ban = { name: 'ban', names: ['ban'], permissions: true,
     if (!user) return send(api, channelId,
       E.error('User Not Found', 'Could not find that user.\nUsage: `!ban <@user|ID> [reason]`'));
     const check = await canTarget(user.id);
-    if (!check.ok) return send(api, channelId, E.error('Action Denied', check.reason));
+    if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
     await doModAction({ api, guildId, channelId, modUser: author, action: 'BAN',
       targetUser: user, reason: args.slice(1).join(' ') || 'No reason provided' });
   }
@@ -49,7 +49,7 @@ const kick = { name: 'kick', names: ['kick'], permissions: true,
     if (!member) return send(api, channelId,
       E.error('Member Not Found', 'That user is not in this server.\nUsage: `!kick <@user|ID> [reason]`'));
     const check = await canTarget(member.user.id);
-    if (!check.ok) return send(api, channelId, E.error('Action Denied', check.reason));
+    if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
     await doModAction({ api, guildId, channelId, modUser: author, action: 'KICK',
       targetUser: member.user, reason: args.slice(1).join(' ') || 'No reason provided' });
   }
@@ -64,7 +64,7 @@ const warn = { name: 'warn', names: ['warn'], permissions: true,
     if (!member) return send(api, channelId,
       E.error('Member Not Found', 'That user is not in this server.\nUsage: `!warn <@user|ID> <reason>`'));
     const check = await canTarget(member.user.id);
-    if (!check.ok) return send(api, channelId, E.error('Action Denied', check.reason));
+    if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
     const reason = args.slice(1).join(' ');
     if (!reason) return send(api, channelId,
       E.error('Missing Reason', 'A reason is required for warnings.\nUsage: `!warn <@user|ID> <reason>`'));
@@ -82,7 +82,7 @@ const warn = { name: 'warn', names: ['warn'], permissions: true,
       'Moderator': author.username, 'Reason': reason,
       'Case': entry.caseId, 'Total Warnings': warns,
     }, entry);
-    return send(api, channelId, E.warnConfirm(member.user, reason, entry.caseId, warns));
+    return send(api, channelId, mid, E.warnConfirm(member.user, reason, entry.caseId, warns));
   }
 };
 
@@ -94,7 +94,7 @@ const unban = { name: 'unban', names: ['unban'], permissions: true,
     if (!/^\d{10,20}$/.test(args[0])) return send(api, channelId,
       E.error('Invalid ID', 'Please provide a valid numeric user ID.\nUsage: `!unban <userID> [reason]`'));
     const user = await api.users.get(args[0]).catch(() => null);
-    if (!user) return send(api, channelId, E.error('User Not Found', 'Could not find a user with that ID.'));
+    if (!user) return send(api, channelId, mid, E.error('User Not Found', 'Could not find a user with that ID.'));
     await doModAction({ api, guildId, channelId, modUser: author, action: 'UNBAN',
       targetUser: user, reason: args.slice(1).join(' ') || 'No reason provided' });
   }
@@ -109,7 +109,7 @@ const timeout = { name: 'timeout', names: ['timeout', 'mute'], permissions: true
     if (!member) return send(api, channelId,
       E.error('Member Not Found', 'That user is not in this server.\nUsage: `!timeout <@user|ID> <duration> [reason]`'));
     const check = await canTarget(member.user.id);
-    if (!check.ok) return send(api, channelId, E.error('Action Denied', check.reason));
+    if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
     if (!args[1]) return send(api, channelId,
       E.error('Missing Duration', 'A duration is required.\nValid formats: `30s` `10m` `2h` `1d` *(max 28d)*'));
     const parsed = parseDuration(args[1]);
@@ -130,7 +130,7 @@ const untimeout = { name: 'untimeout', names: ['untimeout', 'unmute'], permissio
     if (!member) return send(api, channelId,
       E.error('Member Not Found', 'That user is not in this server.'));
     const check = await canTarget(member.user.id);
-    if (!check.ok) return send(api, channelId, E.error('Action Denied', check.reason));
+    if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
     await doModAction({ api, guildId, channelId, modUser: author, action: 'UNTIMEOUT',
       targetUser: member.user, reason: args.slice(1).join(' ') || 'Timeout removed' });
   }
@@ -148,12 +148,12 @@ const caseCmd = { name: 'case', names: ['case'], permissions: true,
       const cases = await getCasesByUser(guildId, userId);
       if (!cases.length) return send(api, channelId,
         E.success('No Cases Found', `No cases on record for \`${userId}\`.`));
-      return send(api, channelId, E.caseHistory(userId, cases));
+      return send(api, channelId, mid, E.caseHistory(userId, cases));
     }
     const c = await getCaseById(guildId, args[0].toUpperCase());
     if (!c) return send(api, channelId,
       E.error('Case Not Found', `No case found with ID \`${args[0].toUpperCase()}\`.\nUsage: \`!case <ID>\` or \`!case history <@user|ID>\``));
-    return send(api, channelId, E.caseEmbed(c));
+    return send(api, channelId, mid, E.caseEmbed(c));
   }
 };
 
