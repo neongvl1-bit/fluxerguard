@@ -1,153 +1,136 @@
-const { getSettings, updateSettings, addWhitelist, removeWhitelist, getWhitelist,
-        addBlacklist, removeBlacklist, getBlacklist } = require('../utils/db');
+require('dotenv').config();
+const { getSettings, updateSettings, addWhitelist, removeWhitelist, getWhitelist, addBlacklist, removeBlacklist, getBlacklist } = require('../utils/db');
 const E = require('../utils/embeds');
 
 function resolveId(i) { return i ? i.replace(/[<#@!&>]/g, '') : null; }
 
-const send = (api, channelId, body) => {
+const send = (api, channelId, messageId, body) => {
   const payload = typeof body === 'string' ? E.error('Error', body) : { ...body };
+  if (messageId) return api.channels.replyMessage(channelId, messageId, payload);
   return api.channels.createMessage(channelId, payload);
 };
 
 // ── SETPREFIX ─────────────────────────────────────────────────────────────────
 const setprefix = { name: 'setprefix', names: ['setprefix'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
-    if (!args[0] || args[0].length > 5) return send(api, channelId,
-      E.error('Invalid Prefix', 'Usage: `!setprefix <prefix>`\nExample: `!setprefix ?` or `!setprefix g!`\n*(max 5 characters)*'));
-    await updateSettings(guildId, { prefix: args[0] });
-    return send(api, channelId, E.success('Prefix Updated', `Bot prefix changed to \`${args[0]}\``));
+    const mid = message?.id;
+    const p = args[0];
+    if (!p || p.length > 5) return send(api, channelId, mid,
+      E.error('Invalid Prefix', 'Prefix must be 1–5 characters.\nExample: `!setprefix ?`'));
+    await updateSettings(guildId, { prefix: p });
+    return send(api, channelId, mid, E.success('Prefix Updated', `Prefix set to \`${p}\``));
   }
 };
 
-// ── SETLOG ───────────────────────────────────────────────────────────�����────────
+// ── SETLOG ────────────────────────────────────────────────────────────────────
 const setlog = { name: 'setlog', names: ['setlog'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
-    const id = args[0] ? resolveId(args[0]) : channelId;
+    const mid = message?.id;
+    if (!args[0]) {
+      await updateSettings(guildId, { log_channel: null });
+      return send(api, channelId, mid, E.success('Log Disabled', 'Log channel has been removed.'));
+    }
+    const id = resolveId(args[0]);
+    if (!id) return send(api, channelId, mid, E.error('Invalid Channel', 'Usage: `!setlog #channel` or `!setlog` to disable.'));
     await updateSettings(guildId, { log_channel: id });
-    return send(api, channelId, E.success('Log Channel Updated', `Moderation logs will be sent to <#${id}>`));
+    return send(api, channelId, mid, E.success('Log Channel Set', `Logging to <#${id}>`));
   }
 };
 
 // ── WHITELIST ─────────────────────────────────────────────────────────────────
 const whitelist = { name: 'whitelist', names: ['whitelist', 'wl'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
+    const mid = message?.id;
     const sub = (args[0] || '').toLowerCase();
-    if (!sub) return send(api, channelId,
-      E.error('Missing Subcommand', 'Usage:\n`!whitelist add <@user|ID>` — bypass all security\n`!whitelist remove <@user|ID>`\n`!whitelist list`'));
-    if (sub === 'list') {
-      const l = await getWhitelist(guildId);
-      return send(api, channelId, E.listEmbed('whitelist', l));
-    }
-    const userId = resolveId(args[1]);
-    if (!userId) return send(api, channelId,
-      E.error('Missing User', 'Usage: `!whitelist add/remove <@user|ID>`'));
     if (sub === 'add') {
-      await addWhitelist(guildId, userId);
-      return send(api, channelId, E.success('Whitelist Updated', `\`${userId}\` added to the whitelist.\nThey now bypass all auto-security modules.`));
+      const id = resolveId(args[1]);
+      if (!id) return send(api, channelId, mid, E.error('Missing User', 'Usage: `!whitelist add <@user|ID>`'));
+      await addWhitelist(guildId, id);
+      return send(api, channelId, mid, E.success('Whitelisted', `<@${id}> will bypass all auto-security modules.`));
     }
     if (sub === 'remove') {
-      await removeWhitelist(guildId, userId);
-      return send(api, channelId, E.success('Whitelist Updated', `\`${userId}\` removed from the whitelist.`));
+      const id = resolveId(args[1]);
+      if (!id) return send(api, channelId, mid, E.error('Missing User', 'Usage: `!whitelist remove <@user|ID>`'));
+      await removeWhitelist(guildId, id);
+      return send(api, channelId, mid, E.success('Removed', `<@${id}> removed from whitelist.`));
     }
-    return send(api, channelId, E.error('Unknown Subcommand', 'Valid subcommands: `add` / `remove` / `list`'));
+    if (sub === 'list') {
+      const ids = await getWhitelist(guildId);
+      return send(api, channelId, mid, E.listEmbed('whitelist', ids));
+    }
+    return send(api, channelId, mid, E.error('Usage', '`!whitelist add/remove/list <@user|ID>`'));
   }
 };
 
 // ── BLACKLIST ─────────────────────────────────────────────────────────────────
 const blacklist = { name: 'blacklist', names: ['blacklist', 'bl'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
+    const mid = message?.id;
     const sub = (args[0] || '').toLowerCase();
-    if (!sub) return send(api, channelId,
-      E.error('Missing Subcommand', 'Usage:\n`!blacklist add <@user|ID>` — auto-ban on join\n`!blacklist remove <@user|ID>`\n`!blacklist list`'));
-    if (sub === 'list') {
-      const l = await getBlacklist(guildId);
-      return send(api, channelId, E.listEmbed('blacklist', l));
-    }
-    const userId = resolveId(args[1]);
-    if (!userId) return send(api, channelId,
-      E.error('Missing User', 'Usage: `!blacklist add/remove <@user|ID>`'));
     if (sub === 'add') {
-      await addBlacklist(guildId, userId);
-      return send(api, channelId, E.success('Blacklist Updated', `\`${userId}\` added to the blacklist.\nThey will be auto-banned when they join.`));
+      const id = resolveId(args[1]);
+      if (!id) return send(api, channelId, mid, E.error('Missing User', 'Usage: `!blacklist add <@user|ID>`'));
+      await addBlacklist(guildId, id);
+      return send(api, channelId, mid, E.success('Blacklisted', `<@${id}> will be auto-banned on join.`));
     }
     if (sub === 'remove') {
-      await removeBlacklist(guildId, userId);
-      return send(api, channelId, E.success('Blacklist Updated', `\`${userId}\` removed from the blacklist.`));
+      const id = resolveId(args[1]);
+      if (!id) return send(api, channelId, mid, E.error('Missing User', 'Usage: `!blacklist remove <@user|ID>`'));
+      await removeBlacklist(guildId, id);
+      return send(api, channelId, mid, E.success('Removed', `<@${id}> removed from blacklist.`));
     }
-    return send(api, channelId, E.error('Unknown Subcommand', 'Valid subcommands: `add` / `remove` / `list`'));
+    if (sub === 'list') {
+      const ids = await getBlacklist(guildId);
+      return send(api, channelId, mid, E.listEmbed('blacklist', ids));
+    }
+    return send(api, channelId, mid, E.error('Usage', '`!blacklist add/remove/list <@user|ID>`'));
   }
 };
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const CONFIG_HELP = E.info('Configuration Help',
-  'Usage: `!config <module> <key> <value>`',
-  [
-    E.field('AntiRaid',  '`enabled` true/false\n`threshold` 2–50\n`action` kick/ban/**alert**',            true),
-    E.field('AntiNuke',  '`enabled` true/false\n`threshold` 1–20\n`action` ban/**alert**',                 true),
-    E.field('AntiSpam',  '`enabled` true/false\n`maxmessages` 3–50\n`action` timeout/kick/ban/**alert**',  true),
-    E.field('AntiFlood', '`enabled` true/false\n`duplicates` 2–20\n*(shares AntiSpam action)*',            true),
-    E.field('ℹ️ Alert mode', '`alert` = bot detects the threat but takes **no action** — only sends a warning to the log channel so moderators can decide.', false),
-  ]
-);
-
 const config = { name: 'config', names: ['config', 'settings'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
-    if (!args[0]) {
-      const g = await getSettings(guildId);
-      return send(api, channelId, E.configEmbed(g));
+    const mid = message?.id;
+    const g = await getSettings(guildId);
+    if (!args[0]) return send(api, channelId, mid, E.configEmbed(g));
+    const [module, key, ...rest] = args;
+    const value = rest.join(' ');
+    const mod  = module.toLowerCase();
+    const k    = key ? key.toLowerCase() : null;
+    const v    = value.toLowerCase();
+    const numVal  = parseInt(value);
+    const boolVal = ['true','on','enable','enabled'].includes(v);
+    const falseV  = ['false','off','disable','disabled'].includes(v);
+    const validActions = ['ban', 'kick', 'timeout', 'alert'];
+
+    if (mod === 'antiraid') {
+      if (k === 'enabled')                          await updateSettings(guildId, { antiraid_enabled: boolVal || !falseV });
+      else if (k === 'threshold' && numVal > 0)     await updateSettings(guildId, { antiraid_threshold: numVal });
+      else if (k === 'interval'  && numVal > 0)     await updateSettings(guildId, { antiraid_interval: numVal * 1000 });
+      else if (k === 'action' && validActions.includes(v)) await updateSettings(guildId, { antiraid_action: v });
+      else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `threshold`, `interval`, `action`\nActions: `ban`, `kick`, `alert`'));
+    } else if (mod === 'antinuke') {
+      if (k === 'enabled')                          await updateSettings(guildId, { antinuke_enabled: boolVal || !falseV });
+      else if (k === 'threshold' && numVal > 0)     await updateSettings(guildId, { antinuke_threshold: numVal });
+      else if (k === 'interval'  && numVal > 0)     await updateSettings(guildId, { antinuke_interval: numVal * 1000 });
+      else if (k === 'action' && ['ban','alert'].includes(v)) await updateSettings(guildId, { antinuke_action: v });
+      else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `threshold`, `interval`, `action`\nActions: `ban`, `alert`'));
+    } else if (mod === 'antispam') {
+      if (k === 'enabled')                          await updateSettings(guildId, { antispam_enabled: boolVal || !falseV });
+      else if (k === 'max'      && numVal > 0)      await updateSettings(guildId, { antispam_max_msgs: numVal });
+      else if (k === 'interval' && numVal > 0)      await updateSettings(guildId, { antispam_interval: numVal * 1000 });
+      else if (k === 'action' && validActions.includes(v)) await updateSettings(guildId, { antispam_action: v });
+      else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `max`, `interval`, `action`\nActions: `ban`, `kick`, `timeout`, `alert`'));
+    } else if (mod === 'antiflood') {
+      if (k === 'enabled')                          await updateSettings(guildId, { antiflood_enabled: boolVal || !falseV });
+      else if (k === 'duplicates' && numVal > 0)    await updateSettings(guildId, { antiflood_duplicates: numVal });
+      else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `duplicates`'));
+    } else {
+      return send(api, channelId, mid, E.error('Unknown Module', 'Modules: `antiraid`, `antinuke`, `antispam`, `antiflood`'));
     }
 
-    const [mod, key, value] = [args[0].toLowerCase(), args[1]?.toLowerCase(), args[2]];
-    if (!key || !value) return send(api, channelId, CONFIG_HELP);
-
-    const toBool = v => ['true','yes','on','1','enable','enabled'].includes(v.toLowerCase());
-    const toInt  = (v, mn, mx) => {
-      const n = parseInt(v);
-      if (isNaN(n) || n < mn || n > mx) throw new Error(`Must be between ${mn} and ${mx}`);
-      return n;
-    };
-
-    try {
-      const p = {};
-
-      if (mod === 'antiraid') {
-        if      (key === 'enabled')   p.antiraid_enabled   = toBool(value);
-        else if (key === 'threshold') p.antiraid_threshold = toInt(value, 2, 50);
-        else if (key === 'action') {
-          if (!['kick','ban','alert'].includes(value)) throw new Error('Action must be `kick`, `ban` or `alert`');
-          p.antiraid_action = value;
-        } else throw new Error(`Unknown key \`${key}\` for antiraid`);
-
-      } else if (mod === 'antinuke') {
-        if      (key === 'enabled')   p.antinuke_enabled   = toBool(value);
-        else if (key === 'threshold') p.antinuke_threshold = toInt(value, 1, 20);
-        else if (key === 'action') {
-          if (!['ban','alert'].includes(value)) throw new Error('Action must be `ban` or `alert`');
-          p.antinuke_action = value;
-        } else throw new Error(`Unknown key \`${key}\` for antinuke`);
-
-      } else if (mod === 'antispam') {
-        if      (key === 'enabled')     p.antispam_enabled  = toBool(value);
-        else if (key === 'maxmessages') p.antispam_max_msgs = toInt(value, 3, 50);
-        else if (key === 'action') {
-          if (!['timeout','kick','ban','alert'].includes(value)) throw new Error('Action must be `timeout`, `kick`, `ban` or `alert`');
-          p.antispam_action = value;
-        } else throw new Error(`Unknown key \`${key}\` for antispam`);
-
-      } else if (mod === 'antiflood') {
-        if      (key === 'enabled')    p.antiflood_enabled    = toBool(value);
-        else if (key === 'duplicates') p.antiflood_duplicates = toInt(value, 2, 20);
-        else throw new Error(`Unknown key \`${key}\` for antiflood`);
-
-      } else {
-        throw new Error(`Unknown module \`${mod}\`. Valid: \`antiraid\`, \`antinuke\`, \`antispam\`, \`antiflood\``);
-      }
-
-      await updateSettings(guildId, p);
-      return send(api, channelId, E.success('Configuration Updated', `**${mod}.${key}** → \`${value}\``));
-    } catch (err) {
-      return send(api, channelId, E.error('Invalid Configuration', `${err.message}\n\nRun \`!config\` to see all options.`));
-    }
+    const updated = await getSettings(guildId);
+    return send(api, channelId, mid, E.configEmbed(updated));
   }
 };
 
@@ -157,14 +140,16 @@ const help = { name: 'help', names: ['help'],
     const api       = ctx.api;
     const guildId   = ctx.guildId;
     const channelId = ctx.channelId;
-    const message   = ctx.message;
+    const mid       = ctx.message?.id;
     const { prefix } = await getSettings(guildId);
     let category = null;
-    if (message && message.content) {
-      const parts = message.content.trim().split(/\s+/);
+    if (ctx.message && ctx.message.content) {
+      const parts = ctx.message.content.trim().split(/\s+/);
       if (parts.length >= 2) category = parts[1].toLowerCase();
     }
-    return send(api, channelId, E.helpEmbed(prefix, category));
+    const payload = E.helpEmbed(prefix, category);
+    if (mid) return api.channels.replyMessage(channelId, mid, payload);
+    return api.channels.createMessage(channelId, payload);
   }
 };
 
