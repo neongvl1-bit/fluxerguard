@@ -102,14 +102,14 @@ async function canTarget(api, guildId, authorMessage, targetId) {
   if (!targetMember) return { ok: true }; // daca nu e in server (ex: unban), permite
 
   // Nu poti actiona asupra owner-ului serverului
-  const { ownerCache } = require('./utils/cache');
+  const { ownerCache } = require('../utils/cache');
   const ownerId = ownerCache.get ? ownerCache.get(String(guildId)) : null;
   if (ownerId && String(ownerId) === String(targetId)) {
     return { ok: false, reason: "You can't use this command on the server owner." };
   }
 
   // Nu poti actiona asupra unui user cu permisiuni privilegiate (admin, ban, kick, etc.)
-  const { isPrivileged } = require('./utils/isPrivileged');
+  const { isPrivileged } = require('../utils/isPrivileged');
   if (await isPrivileged(api, guildId, targetId, targetMember.roles)) {
     return { ok: false, reason: "You can't use this command on someone with administrative permissions." };
   }
