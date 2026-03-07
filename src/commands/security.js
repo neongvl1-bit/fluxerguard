@@ -69,7 +69,8 @@ function calcGuardianLevel(g) {
 }
 
 const guardian = { name: 'guardian', names: ['guardian', 'security', 'level'], permissions: false,
-  async execute({ api, guildId, channelId }) {
+  async execute({ api, guildId, channelId, message }) {
+    const mid = message?.id;
     const g = await getSettings(guildId);
     const { level, score, checks } = calcGuardianLevel(g);
     return send(api, channelId, mid, E.guardianLevelEmbed(level, score, checks));
@@ -78,7 +79,8 @@ const guardian = { name: 'guardian', names: ['guardian', 'security', 'level'], p
 
 // ── THREAT LOG ────────────────────────────────────────────────────────────────
 const threatlog = { name: 'threatlog', names: ['threatlog', 'threats', 'stats'], permissions: true,
-  async execute({ api, guildId, channelId }) {
+  async execute({ api, guildId, channelId, message }) {
+    const mid = message?.id;
     const allStats = await getThreatStats(guildId, 4);
     if (!allStats.length) return send(api, channelId, mid,
       E.info('No Data Yet', 'No threats have been logged yet. Stats are tracked weekly starting from now.'));
@@ -105,7 +107,8 @@ const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adm
 };
 
 const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: true, adminOnly: true,
-  async execute({ api, guildId, channelId, author }) {
+  async execute({ api, guildId, channelId, author, message }) {
+    const mid = message?.id;
     const g = await getSettings(guildId);
     if (!g.lockdown_enabled) return send(api, channelId, mid,
       E.error('Not Active', 'Server is not currently in lockdown.'));
