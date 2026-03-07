@@ -140,46 +140,52 @@ function configEmbed(g) {
 }
 
 // ── Help ──────────────────────────────────────────────────────────────────────
-function helpEmbed(prefix) {
+function helpEmbed(prefix, category) {
   const p = prefix || '!';
-  return embed(COLORS.INFO, '🛡️  FluxerGuard — Command Reference',
-    `Use \`${p}help\` anytime to see this menu.`,
+
+  if (category) {
+    const cats = {
+      moderation: {
+        icon: '🔨', title: 'Moderation Commands',
+        fields: [
+          field('Ban / Kick / Unban', `\`${p}ban <@user|ID> [reason]\`\n\`${p}kick <@user|ID> [reason]\`\n\`${p}unban <userID> [reason]\``, false),
+          field('Warn / Timeout', `\`${p}warn <@user|ID> <reason>\`\n\`${p}timeout <@user|ID> <duration> [reason]\`\n\`${p}untimeout <@user|ID> [reason]\``, false),
+          field('Cases', `\`${p}case <ID>\`\n\`${p}case history <@user|ID>\``, false),
+        ]
+      },
+      security: {
+        icon: '🛡️', title: 'Security Commands',
+        fields: [
+          field('Config & Lists', `\`${p}config\`\n\`${p}whitelist add/remove/list <@user|ID>\`\n\`${p}blacklist add/remove/list <@user|ID>\``, false),
+          field('Guardian Systems', `\`${p}guardian\` — security score\n\`${p}threatlog\` — weekly report\n\`${p}lockdown [reason]\`\n\`${p}unlockdown\``, false),
+          field('Mod Notes', `\`${p}note <@user|ID> <text>\`\n\`${p}note list <@user|ID>\`\n\`${p}note delete <noteID>\``, false),
+        ]
+      },
+      setup: {
+        icon: '⚙️', title: 'Setup Commands',
+        fields: [
+          field('Bot Setup', `\`${p}setprefix <prefix>\`\n\`${p}setlog [#channel]\``, false),
+          field('⏱️ Duration Format', '`30s`  `10m`  `2h`  `1d`  *(max 28d)*', false),
+        ]
+      }
+    };
+    const cat = cats[category.toLowerCase()];
+    if (!cat) return embed(COLORS.ERROR, '❌ Unknown Category', 'Valid: `moderation`, `security`, `setup`', []);
+    return embed(COLORS.INFO, `${cat.icon}  ${cat.title}`, `Use \`${p}help\` to return to the main menu.`, cat.fields);
+  }
+
+  return embed(COLORS.INFO, '🛡️  FluxerGuard',
+    'A powerful security & moderation bot.\nPick a category below:',
     [
-      field('🔨 Moderation', [
-        `\`${p}ban <@user|ID> [reason]\``,
-        `\`${p}kick <@user|ID> [reason]\``,
-        `\`${p}warn <@user|ID> <reason>\``,
-        `\`${p}unban <userID> [reason]\``,
-        `\`${p}timeout <@user|ID> <duration> [reason]\``,
-        `\`${p}untimeout <@user|ID> [reason]\``,
-      ].join('\n'), false),
-      field('📋 Cases', [
-        `\`${p}case <ID>\` — look up a case`,
-        `\`${p}case history <@user|ID>\` — full history`,
-      ].join('\n'), false),
-      field('🛡️ Security', [
-        `\`${p}config\` — view/edit all settings`,
-        `\`${p}whitelist add/remove/list\``,
-        `\`${p}blacklist add/remove/list\``,
-      ].join('\n'), false),
-      field('🔒 FluxerGuard Systems', [
-        `\`${p}guardian\` — server security level`,
-        `\`${p}threatlog\` — weekly threat report`,
-        `\`${p}lockdown [reason]\` — emergency lockdown`,
-        `\`${p}unlockdown\` — lift lockdown`,
-        `\`${p}note <@user|ID> <text>\` — add mod note`,
-        `\`${p}note list <@user|ID>\` — view notes`,
-        `\`${p}note delete <noteID>\` — delete note`,
-      ].join('\n'), false),
-      field('⚙️ Setup', [
-        `\`${p}setprefix <prefix>\``,
-        `\`${p}setlog [#channel]\``,
-      ].join('\n'), true),
-      field('⏱️ Duration Format', '`30s`  `10m`  `2h`  `1d`  *(max 28d)*', true),
+      field('🔨 Moderation', `\`${p}help moderation\``, true),
+      field('🛡️ Security',   `\`${p}help security\``,   true),
+      field('⚙️ Setup',      `\`${p}help setup\``,      true),
+      field('📌 Quick Tips',
+        `• \`${p}config\` — configure all auto-protection\n• \`${p}guardian\` — server security score\n• \`${p}setlog\` — enable action logging`,
+        false),
     ]
   );
 }
-
 // ── List ──────────────────────────────────────────────────────────────────────
 function listEmbed(type, ids) {
   const isWhite = type === 'whitelist';
