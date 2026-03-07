@@ -91,6 +91,7 @@ const threatlog = { name: 'threatlog', names: ['threatlog', 'threats', 'stats'],
 // ── LOCKDOWN ──────────────────────────────────────────────────────────────────
 const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adminOnly: true,
   async execute({ api, args, guildId, channelId, author, message }) {
+    const mid = message?.id;
     const g = await getSettings(guildId);
     if (g.lockdown_enabled) return send(api, channelId, mid,
       E.error('Already Active', 'Server is already in lockdown. Use `!unlockdown` to lift it.'));
@@ -119,6 +120,7 @@ const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: tru
 // ── MOD NOTES ─────────────────────────────────────────────────────────────────
 const note = { name: 'note', names: ['note'], permissions: true,
   async execute({ api, args, guildId, channelId, author, message }) {
+    const mid = message?.id;
     const sub = (args[0] || '').toLowerCase();
 
     if (sub === 'list') {
