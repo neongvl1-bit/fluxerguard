@@ -1,4 +1,5 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
+const { isPrivileged } = require('../utils/isPrivileged');
 const { sendLog }    = require('../utils/logger');
 const { alertEmbed } = require('../utils/embeds');
 
@@ -8,6 +9,7 @@ async function handleAntiRaid(api, guildId, member) {
   const cfg = await getSettings(guildId);
   if (!cfg.antiraid_enabled) return;
   if (await isWhitelisted(guildId, member.user.id)) return;
+  if (await isPrivileged(api, guildId, member.user.id)) return;
 
   const now = Date.now();
   if (!tracker.has(guildId)) tracker.set(guildId, []);
@@ -37,6 +39,7 @@ async function handleAntiRaid(api, guildId, member) {
 
     for (const { userId } of recent) {
       if (await isWhitelisted(guildId, userId)) continue;
+      if (await isPrivileged(api, guildId, userId)) continue;
       const reason = `[AntiRaid] Mass join detected — auto ${cfg.antiraid_action}`;
       try {
         try {
