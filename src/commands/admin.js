@@ -103,34 +103,54 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
     const falseV  = ['false','off','disable','disabled'].includes(v);
     const validActions = ['ban', 'kick', 'timeout', 'alert'];
 
+    // Determina ce se schimba si aplica
+    let patch = null;
+    let displayKey = null;
+    let displayVal = null;
+
     if (mod === 'antiraid') {
-      if (k === 'enabled')                          await updateSettings(guildId, { antiraid_enabled: boolVal || !falseV });
-      else if (k === 'threshold' && numVal > 0)     await updateSettings(guildId, { antiraid_threshold: numVal });
-      else if (k === 'interval'  && numVal > 0)     await updateSettings(guildId, { antiraid_interval: numVal * 1000 });
-      else if (k === 'action' && validActions.includes(v)) await updateSettings(guildId, { antiraid_action: v });
+      if (k === 'enabled')                               { patch = { antiraid_enabled: boolVal || !falseV };  displayKey = 'Enabled';    displayVal = String(boolVal || !falseV); }
+      else if (k === 'threshold' && numVal > 0)          { patch = { antiraid_threshold: numVal };             displayKey = 'Threshold';  displayVal = `${numVal} joins`; }
+      else if (k === 'interval'  && numVal > 0)          { patch = { antiraid_interval: numVal * 1000 };       displayKey = 'Interval';   displayVal = `${numVal}s`; }
+      else if (k === 'action' && validActions.includes(v)) { patch = { antiraid_action: v };                   displayKey = 'Action';     displayVal = v; }
       else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `threshold`, `interval`, `action`\nActions: `ban`, `kick`, `alert`'));
     } else if (mod === 'antinuke') {
-      if (k === 'enabled')                          await updateSettings(guildId, { antinuke_enabled: boolVal || !falseV });
-      else if (k === 'threshold' && numVal > 0)     await updateSettings(guildId, { antinuke_threshold: numVal });
-      else if (k === 'interval'  && numVal > 0)     await updateSettings(guildId, { antinuke_interval: numVal * 1000 });
-      else if (k === 'action' && ['ban','alert'].includes(v)) await updateSettings(guildId, { antinuke_action: v });
+      if (k === 'enabled')                               { patch = { antinuke_enabled: boolVal || !falseV };  displayKey = 'Enabled';    displayVal = String(boolVal || !falseV); }
+      else if (k === 'threshold' && numVal > 0)          { patch = { antinuke_threshold: numVal };             displayKey = 'Threshold';  displayVal = `${numVal} actions`; }
+      else if (k === 'interval'  && numVal > 0)          { patch = { antinuke_interval: numVal * 1000 };       displayKey = 'Interval';   displayVal = `${numVal}s`; }
+      else if (k === 'action' && ['ban','alert'].includes(v)) { patch = { antinuke_action: v };                displayKey = 'Action';     displayVal = v; }
       else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `threshold`, `interval`, `action`\nActions: `ban`, `alert`'));
     } else if (mod === 'antispam') {
-      if (k === 'enabled')                          await updateSettings(guildId, { antispam_enabled: boolVal || !falseV });
-      else if (k === 'max'      && numVal > 0)      await updateSettings(guildId, { antispam_max_msgs: numVal });
-      else if (k === 'interval' && numVal > 0)      await updateSettings(guildId, { antispam_interval: numVal * 1000 });
-      else if (k === 'action' && validActions.includes(v)) await updateSettings(guildId, { antispam_action: v });
+      if (k === 'enabled')                               { patch = { antispam_enabled: boolVal || !falseV };  displayKey = 'Enabled';    displayVal = String(boolVal || !falseV); }
+      else if (k === 'max'      && numVal > 0)           { patch = { antispam_max_msgs: numVal };              displayKey = 'Max Msgs';   displayVal = `${numVal} messages`; }
+      else if (k === 'interval' && numVal > 0)           { patch = { antispam_interval: numVal * 1000 };       displayKey = 'Interval';   displayVal = `${numVal}s`; }
+      else if (k === 'action' && validActions.includes(v)) { patch = { antispam_action: v };                   displayKey = 'Action';     displayVal = v; }
       else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `max`, `interval`, `action`\nActions: `ban`, `kick`, `timeout`, `alert`'));
     } else if (mod === 'antiflood') {
-      if (k === 'enabled')                          await updateSettings(guildId, { antiflood_enabled: boolVal || !falseV });
-      else if (k === 'duplicates' && numVal > 0)    await updateSettings(guildId, { antiflood_duplicates: numVal });
+      if (k === 'enabled')                               { patch = { antiflood_enabled: boolVal || !falseV }; displayKey = 'Enabled';    displayVal = String(boolVal || !falseV); }
+      else if (k === 'duplicates' && numVal > 0)         { patch = { antiflood_duplicates: numVal };           displayKey = 'Duplicates'; displayVal = `${numVal} identical msgs`; }
       else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `duplicates`'));
     } else {
       return send(api, channelId, mid, E.error('Unknown Module', 'Modules: `antiraid`, `antinuke`, `antispam`, `antiflood`'));
     }
 
-    const updated = await getSettings(guildId);
-    return send(api, channelId, mid, E.configEmbed(updated));
+    // Aplica setarea
+    try {
+      await updateSettings(guildId, patch);
+      const moduleName = { antiraid: '🛡️ AntiRaid', antinuke: '💥 AntiNuke', antispam: '⚠️ AntiSpam', antiflood: '🌊 AntiFlood' }[mod];
+      return send(api, channelId, mid, {
+        embeds: [{
+          color: 0x43B581,
+          title: '✅ Setting Updated',
+          description: `**${moduleName}** → **${displayKey}** has been set to **${displayVal}**.`,
+          footer: { text: 'FluxerGuard • Use !config to view all settings' },
+          timestamp: new Date().toISOString(),
+        }]
+      });
+    } catch (err) {
+      console.error('[CONFIG ERROR]', err.message);
+      return send(api, channelId, mid, E.error('Update Failed', `Could not save the setting. Please try again.\n-# Error: ${err.message}`));
+    }
   }
 };
 
