@@ -2,76 +2,80 @@ const { getSettings, updateSettings, addWhitelist, removeWhitelist, getWhitelist
         addBlacklist, removeBlacklist, getBlacklist } = require('../utils/db');
 const E = require('../utils/embeds');
 
-function resolveId(i) { return i ? i.replace(/[<@!>&]/g, '') : null; }
-const send = (api, channelId, body) => api.channels.createMessage(channelId,
-  typeof body === 'string' ? E.error('Error', body) : body);
+function resolveId(i) { return i ? i.replace(/[<#@!&>]/g, '') : null; }
+
+const send = (api, channelId, body, msgId = null) => {
+  const payload = typeof body === 'string' ? E.error('Error', body) : { ...body };
+  if (msgId) payload.message_reference = { message_id: msgId };
+  return api.channels.createMessage(channelId, payload);
+};
 
 // ── SETPREFIX ─────────────────────────────────────────────────────────────────
 const setprefix = { name: 'setprefix', names: ['setprefix'], permissions: true,
-  async execute({ api, args, guildId, channelId }) {
+  async execute({ api, args, guildId, channelId, message }) {
     if (!args[0] || args[0].length > 5) return send(api, channelId,
-      E.error('Invalid Prefix', 'Usage: `!setprefix <prefix>`\nExample: `!setprefix ?` or `!setprefix g!`\n*(max 5 characters)*'));
+      E.error('Invalid Prefix', 'Usage: `!setprefix <prefix>`\nExample: `!setprefix ?` or `!setprefix g!`\n*(max 5 characters)*'), message.id);
     await updateSettings(guildId, { prefix: args[0] });
-    return send(api, channelId, E.success('Prefix Updated', `Bot prefix changed to \`${args[0]}\``));
+    return send(api, channelId, E.success('Prefix Updated', `Bot prefix changed to \`${args[0]}\``), message.id);
   }
 };
 
 // ── SETLOG ────────────────────────────────────────────────────────────────────
 const setlog = { name: 'setlog', names: ['setlog'], permissions: true,
-  async execute({ api, args, guildId, channelId }) {
+  async execute({ api, args, guildId, channelId, message }) {
     const id = args[0] ? resolveId(args[0]) : channelId;
     await updateSettings(guildId, { log_channel: id });
-    return send(api, channelId, E.success('Log Channel Updated', `Moderation logs will be sent to <#${id}>`));
+    return send(api, channelId, E.success('Log Channel Updated', `Moderation logs will be sent to <#${id}>`), message.id);
   }
 };
 
 // ── WHITELIST ─────────────────────────────────────────────────────────────────
 const whitelist = { name: 'whitelist', names: ['whitelist', 'wl'], permissions: true,
-  async execute({ api, args, guildId, channelId }) {
+  async execute({ api, args, guildId, channelId, message }) {
     const sub = (args[0] || '').toLowerCase();
     if (!sub) return send(api, channelId,
-      E.error('Missing Subcommand', 'Usage:\n`!whitelist add <@user|ID>` — bypass all security\n`!whitelist remove <@user|ID>`\n`!whitelist list`'));
+      E.error('Missing Subcommand', 'Usage:\n`!whitelist add <@user|ID>` — bypass all security\n`!whitelist remove <@user|ID>`\n`!whitelist list`'), message.id);
     if (sub === 'list') {
       const l = await getWhitelist(guildId);
-      return send(api, channelId, E.listEmbed('whitelist', l));
+      return send(api, channelId, E.listEmbed('whitelist', l), message.id);
     }
     const userId = resolveId(args[1]);
     if (!userId) return send(api, channelId,
-      E.error('Missing User', 'Usage: `!whitelist add/remove <@user|ID>`'));
+      E.error('Missing User', 'Usage: `!whitelist add/remove <@user|ID>`'), message.id);
     if (sub === 'add') {
       await addWhitelist(guildId, userId);
-      return send(api, channelId, E.success('Whitelist Updated', `\`${userId}\` added to the whitelist.\nThey now bypass all auto-security modules.`));
+      return send(api, channelId, E.success('Whitelist Updated', `\`${userId}\` added to the whitelist.\nThey now bypass all auto-security modules.`), message.id);
     }
     if (sub === 'remove') {
       await removeWhitelist(guildId, userId);
-      return send(api, channelId, E.success('Whitelist Updated', `\`${userId}\` removed from the whitelist.`));
+      return send(api, channelId, E.success('Whitelist Updated', `\`${userId}\` removed from the whitelist.`), message.id);
     }
-    return send(api, channelId, E.error('Unknown Subcommand', 'Valid subcommands: `add` / `remove` / `list`'));
+    return send(api, channelId, E.error('Unknown Subcommand', 'Valid subcommands: `add` / `remove` / `list`'), message.id);
   }
 };
 
 // ── BLACKLIST ─────────────────────────────────────────────────────────────────
 const blacklist = { name: 'blacklist', names: ['blacklist', 'bl'], permissions: true,
-  async execute({ api, args, guildId, channelId }) {
+  async execute({ api, args, guildId, channelId, message }) {
     const sub = (args[0] || '').toLowerCase();
     if (!sub) return send(api, channelId,
-      E.error('Missing Subcommand', 'Usage:\n`!blacklist add <@user|ID>` — auto-ban on join\n`!blacklist remove <@user|ID>`\n`!blacklist list`'));
+      E.error('Missing Subcommand', 'Usage:\n`!blacklist add <@user|ID>` — auto-ban on join\n`!blacklist remove <@user|ID>`\n`!blacklist list`'), message.id);
     if (sub === 'list') {
       const l = await getBlacklist(guildId);
-      return send(api, channelId, E.listEmbed('blacklist', l));
+      return send(api, channelId, E.listEmbed('blacklist', l), message.id);
     }
     const userId = resolveId(args[1]);
     if (!userId) return send(api, channelId,
-      E.error('Missing User', 'Usage: `!blacklist add/remove <@user|ID>`'));
+      E.error('Missing User', 'Usage: `!blacklist add/remove <@user|ID>`'), message.id);
     if (sub === 'add') {
       await addBlacklist(guildId, userId);
-      return send(api, channelId, E.success('Blacklist Updated', `\`${userId}\` added to the blacklist.\nThey will be auto-banned when they join.`));
+      return send(api, channelId, E.success('Blacklist Updated', `\`${userId}\` added to the blacklist.\nThey will be auto-banned when they join.`), message.id);
     }
     if (sub === 'remove') {
       await removeBlacklist(guildId, userId);
-      return send(api, channelId, E.success('Blacklist Updated', `\`${userId}\` removed from the blacklist.`));
+      return send(api, channelId, E.success('Blacklist Updated', `\`${userId}\` removed from the blacklist.`), message.id);
     }
-    return send(api, channelId, E.error('Unknown Subcommand', 'Valid subcommands: `add` / `remove` / `list`'));
+    return send(api, channelId, E.error('Unknown Subcommand', 'Valid subcommands: `add` / `remove` / `list`'), message.id);
   }
 };
 
@@ -88,14 +92,14 @@ const CONFIG_HELP = E.info('Configuration Help',
 );
 
 const config = { name: 'config', names: ['config', 'settings'], permissions: true,
-  async execute({ api, args, guildId, channelId }) {
+  async execute({ api, args, guildId, channelId, message }) {
     if (!args[0]) {
       const g = await getSettings(guildId);
-      return send(api, channelId, E.configEmbed(g));
+      return send(api, channelId, E.configEmbed(g), message.id);
     }
 
     const [mod, key, value] = [args[0].toLowerCase(), args[1]?.toLowerCase(), args[2]];
-    if (!key || !value) return send(api, channelId, CONFIG_HELP);
+    if (!key || !value) return send(api, channelId, CONFIG_HELP, message.id);
 
     const toBool = v => ['true','yes','on','1','enable','enabled'].includes(v.toLowerCase());
     const toInt  = (v, mn, mx) => {
@@ -124,8 +128,8 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
         } else throw new Error(`Unknown key \`${key}\` for antinuke`);
 
       } else if (mod === 'antispam') {
-        if      (key === 'enabled')     p.antispam_enabled   = toBool(value);
-        else if (key === 'maxmessages') p.antispam_max_msgs  = toInt(value, 3, 50);
+        if      (key === 'enabled')     p.antispam_enabled  = toBool(value);
+        else if (key === 'maxmessages') p.antispam_max_msgs = toInt(value, 3, 50);
         else if (key === 'action') {
           if (!['timeout','kick','ban','alert'].includes(value)) throw new Error('Action must be `timeout`, `kick`, `ban` or `alert`');
           p.antispam_action = value;
@@ -141,18 +145,18 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
       }
 
       await updateSettings(guildId, p);
-      return send(api, channelId, E.success('Configuration Updated', `**${mod}.${key}** → \`${value}\``));
+      return send(api, channelId, E.success('Configuration Updated', `**${mod}.${key}** → \`${value}\``), message.id);
     } catch (err) {
-      return send(api, channelId, E.error('Invalid Configuration', `${err.message}\n\nRun \`!config\` to see all options.`));
+      return send(api, channelId, E.error('Invalid Configuration', `${err.message}\n\nRun \`!config\` to see all options.`), message.id);
     }
   }
 };
 
 // ── HELP ──────────────────────────────────────────────────────────────────────
 const help = { name: 'help', names: ['help'],
-  async execute({ api, guildId, channelId }) {
+  async execute({ api, guildId, channelId, message }) {
     const { prefix } = await getSettings(guildId);
-    return send(api, channelId, E.helpEmbed(prefix));
+    return send(api, channelId, E.helpEmbed(prefix), message.id);
   }
 };
 
