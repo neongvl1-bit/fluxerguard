@@ -67,7 +67,7 @@ function calcGuardianLevel(g) {
   else if (g.antiraid_action === 'alert') tip = '💡 Tip: Consider setting AntiRaid action to `kick` or `ban` for automatic protection.';
   else if (score < 90)      tip = '💡 Tip: Enable all modules and set a log channel for maximum protection.';
 
-  if (tip) checks.push({ name: '', value: tip, inline: false });
+  if (tip) checks.push({ name: '💡 Recommendation', value: tip, inline: false });
 
   return { level, score: Math.min(score, 100), checks };
 }
