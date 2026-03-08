@@ -109,7 +109,7 @@ async function dispatch(event, data) {
       retryDelay = 3000; // reset delay dupa succes
       intentIndex = intentIndex; // pastreaza intentul care a mers
       console.log('\n╔══════════════════════════════════════════╗');
-      console.log(`║  FluxerGuard — Online ✅                  ║`);
+      console.log(`║  FluxGuard — Online ✅                  ║`);
       console.log(`║  Bot: @${(botUser.username || '?').padEnd(33)}║`);
       console.log(`║  Intents: ${String(INTENTS[intentIndex % INTENTS.length]).padEnd(30)}║`);
       console.log('╚══════════════════════════════════════════╝\n');
@@ -135,7 +135,7 @@ async function dispatch(event, data) {
           await api.channels.createMessage(dm.id, { content: `You were **auto-banned**. Reason: ${reason}` });
         } catch (_) {}
         await api.guilds.banUser(guildId, userId, { reason });
-        const entry = await createCase(guildId, { action: 'BAN', userId, userTag: data.user.username, modId: 'bot', modTag: 'FluxerGuard', reason, auto: true });
+        const entry = await createCase(guildId, { action: 'BAN', userId, userTag: data.user.username, modId: 'bot', modTag: 'FluxGuard', reason, auto: true });
         await sendLog(api, guildId, 'BAN', { 'User': `${data.user.username} (${userId})`, 'Reason': reason, 'Case': entry.caseId }, entry);
         return;
       }
@@ -203,7 +203,7 @@ function connect() {
       console.log('[GW] Server requested reconnect');
       ws.close();
     }
-    else {
+    else if (op !== 1) {
       console.log(`[GW] Unknown op=${op}`);
     }
   });
