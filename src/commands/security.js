@@ -275,7 +275,7 @@ const lookup = { name: 'lookup', names: ['lookup', 'whois'], permissions: true,
         color,
         title: `🔍  Lookup — ${user.username}`,
         fields,
-        footer: { text: 'FluxerGuard' },
+        footer: { text: 'FluxGuard' },
         timestamp: new Date().toISOString(),
       }]
     };
