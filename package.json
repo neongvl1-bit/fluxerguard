@@ -1,7 +1,7 @@
 {
   "name": "fluxerguard",
   "version": "1.0.0",
-  "description": "FluxerGuard - Security Bot pentru Fluxer.app",
+  "description": "FluxGuard - Security Bot pentru Fluxer.app",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js"
