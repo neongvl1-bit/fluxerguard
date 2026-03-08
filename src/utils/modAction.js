@@ -21,8 +21,22 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
   if (action === 'BAN')       await api.guilds.banUser(guildId, targetUser.id, { reason });
   if (action === 'KICK')      await api.guilds.removeMember(guildId, targetUser.id);
   if (action === 'UNBAN')     await api.guilds.unbanUser(guildId, targetUser.id);
-  if (action === 'TIMEOUT')   await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: new Date(Date.now() + durationMs).toISOString() });
-  if (action === 'UNTIMEOUT') await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: null });
+  if (action === 'TIMEOUT') {
+    try {
+      await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: new Date(Date.now() + durationMs).toISOString() });
+    } catch (e) {
+      if (e.message?.includes('403')) throw new Error('Missing Permissions: Bot needs Moderate Members permission.');
+      throw e;
+    }
+  }
+  if (action === 'UNTIMEOUT') {
+    try {
+      await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: null });
+    } catch (e) {
+      if (e.message?.includes('403')) throw new Error('Missing Permissions: Bot needs Moderate Members permission.');
+      throw e;
+    }
+  }
 
   // Log
   await sendLog(api, guildId, action, {
