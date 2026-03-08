@@ -55,8 +55,8 @@ function modDM(action, serverName, reason, caseId, modUsername, duration) {
 // ── Log entry ─────────────────────────────────────────────────────────────────
 function logEntry(action, fieldsObj, caseEntry) {
   const fields    = Object.entries(fieldsObj).map(([k, v]) => field(k, v, true));
-  const caseInfo  = caseEntry ? `\`${caseEntry.caseId}\` • ${caseEntry.auto ? '🤖 Auto' : '👮 Manual'}` : '';
-  return embed(COLORS[action] || COLORS.NEUTRAL, `${ICONS[action] || '🔧'}  ${action}  ${caseInfo}`, null, fields);
+  const caseInfo  = (caseEntry && caseEntry.caseId) ? ` • \`${caseEntry.caseId}\` • ${caseEntry.auto ? '🤖 Auto' : '👮 Manual'}` : '';
+  return embed(COLORS[action] || COLORS.NEUTRAL, `${ICONS[action] || '🔧'}  ${action}${caseInfo}`, null, fields);
 }
 
 // ── Security alert ────────────────────────────────────────────────────────────
