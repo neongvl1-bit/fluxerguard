@@ -185,12 +185,37 @@ const servers = { name: 'servers', names: ['servers', 'serverlist'], ownerOnly: 
     const { getGuildRegistry } = require('../index');
     const registry = getGuildRegistry();
 
-    if (!registry || registry.size === 0) {
-      return send(api, channelId, mid,
-        E.error('No Data', 'No servers in registry yet. Try again after the bot has been running for a moment.'));
+    // Daca registry e gol, incearca fetch direct de la API
+    let guilds = registry && registry.size > 0 ? [...registry.values()] : [];
+
+    if (guilds.length === 0) {
+      try {
+        const fetched = await api.users.getGuilds();
+        const list = Array.isArray(fetched) ? fetched : [];
+        // Fetch detalii complete pentru fiecare guild
+        const details = await Promise.allSettled(list.map(g => api.guilds.get(g.id)));
+        for (const r of details) {
+          if (r.status === 'fulfilled' && r.value?.id) {
+            const g = r.value;
+            guilds.push({
+              id:          String(g.id),
+              name:        g.name || 'Unknown',
+              ownerId:     String(g.owner_id || 'Unknown'),
+              memberCount: g.member_count || g.approximate_member_count || 0,
+            });
+            // Salveaza si in registry pentru viitor
+            registry.set(String(g.id), guilds[guilds.length - 1]);
+          }
+        }
+      } catch (e) {
+        console.error('[SERVERS]', e.message);
+      }
     }
 
-    const guilds = [...registry.values()];
+    if (guilds.length === 0) {
+      return send(api, channelId, mid,
+        E.error('No Data', 'Could not retrieve server list. The bot may not be in any servers yet.'));
+    }
 
     // Fetch owner usernames in parallel
     const ownerNames = await Promise.allSettled(
