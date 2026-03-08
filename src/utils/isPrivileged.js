@@ -8,7 +8,18 @@ function setOwner(guildId, ownerId) {
   ownerIds.set(String(guildId), String(ownerId));
 }
 
-// Fetch roluri cu cache
+// Verifica daca un permissions number contine un bit privilegiat
+function hasPrivilegeBits(permissionsStr) {
+  try {
+    const p = BigInt(permissionsStr || '0');
+    for (const bit of PRIVILEGED_BITS) {
+      if ((p & bit) === bit) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+// Fetch roluri cu cache — folosit doar daca member.permissions nu e disponibil
 async function getGuildRoles(api, guildId) {
   let roles = rolesCache.get(String(guildId));
   if (!roles) {
@@ -19,42 +30,45 @@ async function getGuildRoles(api, guildId) {
   return roles;
 }
 
-// Verifica daca un set de role IDs contine perms privilegiate
+// Verifica daca un set de role IDs contine perms privilegiate (fallback)
 function hasPrivilege(memberRoleIds, allRoles) {
   const myIds = new Set((memberRoleIds || []).map(String));
   for (const role of allRoles) {
     if (!myIds.has(String(role.id))) continue;
-    try {
-      const p = BigInt(role.permissions || '0');
-      for (const bit of PRIVILEGED_BITS) {
-        if ((p & bit) === bit) return true;
-      }
-    } catch (_) {}
+    if (hasPrivilegeBits(role.permissions)) return true;
   }
   return false;
 }
 
-// Functia principala — folosita de antiRaid si antiNuke
-// memberRoleIds = array de role IDs (optional, daca le avem deja)
+// Functia principala — folosita de antiRaid, antiNuke, antiSpam
+// memberRoleIds = array de role IDs (optional, daca le avem deja din event)
 async function isPrivileged(api, guildId, userId, memberRoleIds) {
   const gId = String(guildId);
   const uId = String(userId);
 
-  // Owner bypass
+  // 1. Owner bypass — fetch guild daca nu e in cache
+  if (!ownerIds.has(gId)) {
+    try {
+      const guild = await api.guilds.get(gId);
+      if (guild?.owner_id) ownerIds.set(gId, String(guild.owner_id));
+    } catch (_) {}
+  }
   if (ownerIds.get(gId) === uId) return true;
 
   try {
-    const allRoles = await getGuildRoles(api, gId);
+    // 2. Fetch member — Fluxer poate returna permissions direct pe member object
+    const member = await api.guilds.getMember(gId, uId).catch(() => null);
 
-    // Daca avem rolurile deja pasate
-    if (memberRoleIds?.length) {
-      return hasPrivilege(memberRoleIds, allRoles);
+    // 2a. Daca member are permissions field direct (computed permissions)
+    if (member?.permissions) {
+      return hasPrivilegeBits(member.permissions);
     }
 
-    // Altfel fetch member
-    const member = await api.guilds.getMember(gId, uId).catch(() => null);
-    if (member?.roles?.length) {
-      return hasPrivilege(member.roles, allRoles);
+    // 2b. Fallback — verifica prin rolurile din event sau de pe member
+    const roleIds = member?.roles?.length ? member.roles : (memberRoleIds || []);
+    if (roleIds.length) {
+      const allRoles = await getGuildRoles(api, gId);
+      if (allRoles.length) return hasPrivilege(roleIds, allRoles);
     }
   } catch (_) {}
 
