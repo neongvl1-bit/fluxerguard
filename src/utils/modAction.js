@@ -21,8 +21,8 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
   if (action === 'BAN')       await api.guilds.banUser(guildId, targetUser.id, { reason });
   if (action === 'KICK')      await api.guilds.removeMember(guildId, targetUser.id);
   if (action === 'UNBAN')     await api.guilds.unbanUser(guildId, targetUser.id);
-  if (action === 'TIMEOUT')   await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: new Date(Date.now() + durationMs).toISOString() });
-  if (action === 'UNTIMEOUT') await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: null });
+  if (action === 'TIMEOUT')   await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: new Date(Date.now() + durationMs).toISOString(), timeout_reason: reason });
+  if (action === 'UNTIMEOUT') await api.guilds.editMember(guildId, targetUser.id, { communication_disabled_until: null, timeout_reason: null });
 
   // Log
   await sendLog(api, guildId, action, {
