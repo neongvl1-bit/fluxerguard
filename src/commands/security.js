@@ -287,60 +287,6 @@ const lookup = { name: 'lookup', names: ['lookup', 'whois'], permissions: true,
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 
-// ── ACTIVITY (Server DNA) ─────────────────────────────────────────────────────
-const activity = { name: 'activity', names: ['activity', 'dna', 'serverdna'], permissions: true,
-  async execute({ api, guildId, channelId, message }) {
-    const mid = message?.id;
-
-    // Loading message
-    const loading = await api.channels.replyMessage(channelId, mid, {
-      embeds: [{ color: 0x0099CC, description: '📊 Generating Server DNA chart...' }]
-    }).catch(() => null);
-
-    try {
-      const { getDNAData }    = require('../utils/dna');
-      const { generateChart } = require('../utils/chart');
-      const fs      = require('fs');
-      const fetch   = require('node-fetch');
-      const FormData = require('form-data');
-
-      const data    = await getDNAData(guildId);
-      const imgPath = await generateChart(data);
-      const imgBuffer = fs.readFileSync(imgPath);
-      fs.unlinkSync(imgPath);
-
-      // Trimite cu multipart/form-data
-      const form = new FormData();
-      form.append('file', imgBuffer, { filename: 'dna.png', contentType: 'image/png' });
-      form.append('payload_json', JSON.stringify({
-        embeds: [{
-          color: 0x00E5FF,
-          title: 'Server DNA',
-          description: 'Activity Intelligence for the last 7 days.',
-          image: { url: 'attachment://dna.png' },
-          footer: { text: 'FluxerGuard Premium • Server DNA' },
-          timestamp: new Date().toISOString(),
-        }]
-      }));
-
-      const TOKEN = process.env.FLUXER_BOT_TOKEN;
-      const res = await fetch(`https://api.fluxer.app/v1/channels/${channelId}/messages`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bot ${TOKEN}`, ...form.getHeaders() },
-        body: form,
-      });
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`Upload failed ${res.status}: ${txt}`);
-      }
-    } catch (err) {
-      console.error('[ACTIVITY ERROR FULL]', err.stack || err);
-      await api.channels.createMessage(channelId, {
-        embeds: [{ color: 0xED4245, title: '❌ Error', description: 'Could not generate chart: ' + err.message }]
-      });
-    }
-  }
-};
 
 module.exports = guardian;
-module.exports.extra = [threatlog, lockdown, unlockdown, note, lookup, activity];
+module.exports.extra = [threatlog, lockdown, unlockdown, note, lookup];
