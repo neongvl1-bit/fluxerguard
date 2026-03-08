@@ -84,7 +84,7 @@ async function punish(api, guildId, message, cfg, reason) {
 
     const entry = await createCase(guildId, {
       action: action.toUpperCase(), userId: user.id, userTag: user.username,
-      modId: 'bot', modTag: 'FluxerGuard', reason,
+      modId: 'bot', modTag: 'FluxGuard', reason,
       duration: action === 'timeout' ? formatMs(cfg.antispam_timeout_ms) : null, auto: true,
     });
 
