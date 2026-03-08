@@ -1,3 +1,4 @@
+const { trackModAction } = require('./dna');
 const { createCase }        = require('./db');
 const { sendLog }           = require('./logger');
 const { modConfirm, modDM } = require('./embeds');
