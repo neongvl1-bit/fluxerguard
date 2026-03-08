@@ -185,8 +185,8 @@ function helpEmbed(prefix, category) {
       field('📌 Quick Tips',
         `• \`${p}config\` — configure all auto-protection\n• \`${p}guardian\` — server security score\n• \`${p}setlog\` — enable action logging`,
         false),
-      field('🔗 Links',
-        `[➕ Add FluxGuard to your server](https://web.fluxer.app/oauth2/authorize?client_id=1479261972163135794&scope=bot&permissions=15763699713353790)  •  [💬 Join our community](https://fluxer.gg/0mLkdw2i)`,
+      field('\u200b',
+        `[➕ Add FluxGuard to your server](https://web.fluxer.app/oauth2/authorize?client_id=1479261972163135794&scope=bot&permissions=15763699713353790)\n[💬 Join our community](https://fluxer.gg/0mLkdw2i)`,
         false),
     ]
   );
