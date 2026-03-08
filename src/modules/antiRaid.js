@@ -47,7 +47,7 @@ async function handleAntiRaid(api, guildId, member) {
         } catch (_) {}
         if (cfg.antiraid_action === 'ban') await api.guilds.banUser(guildId, userId, { reason });
         else await api.guilds.removeMember(guildId, userId);
-        const entry = await createCase(guildId, { action: cfg.antiraid_action.toUpperCase(), userId, userTag: userId, modId: 'bot', modTag: 'FluxerGuard', reason, auto: true });
+        const entry = await createCase(guildId, { action: cfg.antiraid_action.toUpperCase(), userId, userTag: userId, modId: 'bot', modTag: 'FluxGuard', reason, auto: true });
         await sendLog(api, guildId, 'ANTIRAID', { 'User': userId, 'Action': cfg.antiraid_action.toUpperCase(), 'Trigger': `${recent.length} joins / ${cfg.antiraid_interval / 1000}s`, 'Case': entry.caseId }, entry);
       } catch (err) { console.error('[ANTIRAID]', err.message); }
     }
