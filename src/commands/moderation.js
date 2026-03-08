@@ -137,6 +137,10 @@ const untimeout = { name: 'untimeout', names: ['untimeout', 'unmute'], permissio
       E.error('Member Not Found', 'That user is not in this server.'));
     const check = await canTarget(member.user.id);
     if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
+    const isTimedOut = member.communication_disabled_until &&
+      new Date(member.communication_disabled_until) > new Date();
+    if (!isTimedOut) return send(api, channelId, mid,
+      E.error('Not Timed Out', 'That user does not have an active timeout.'));
     await doModAction({ api, guildId, channelId, modUser: author, action: 'UNTIMEOUT',
       targetUser: member.user, reason: args.slice(1).join(' ') || 'Timeout removed' });
   }
