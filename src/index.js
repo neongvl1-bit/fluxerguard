@@ -39,7 +39,10 @@ const api = {
   channels: {
     createMessage: (channelId, body) => api.post(`/channels/${channelId}/messages`, body),
     replyMessage:  (channelId, messageId, body) => api.post(`/channels/${channelId}/messages`, { ...body, message_reference: { message_id: messageId } }),
-    fetch:         (channelId)       => api.get(`/channels/${channelId}`),
+    fetch:               (channelId)                   => api.get(`/channels/${channelId}`),
+    getMessages:         (channelId, params)            => { const q = new URLSearchParams(params).toString(); return api.get(`/channels/${channelId}/messages?${q}`); },
+    deleteMessage:       (channelId, messageId)        => api.delete(`/channels/${channelId}/messages/${messageId}`),
+    bulkDeleteMessages:  (channelId, body)             => api.post(`/channels/${channelId}/messages/bulk-delete`, body),
   },
   guilds: {
     get:          (guildId)              => api.get(`/guilds/${guildId}`),
