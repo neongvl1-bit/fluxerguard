@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { trackMessage, trackMember } = require('./utils/dna');
 const WebSocket = require('ws');
 const fetch     = require('node-fetch');
 
@@ -116,6 +117,7 @@ async function dispatch(event, data) {
     }
 
     else if (event === 'MESSAGE_CREATE') {
+      if (data.guild_id && !data.author?.bot) trackMessage(data.guild_id).catch(() => {});
       if (!data.guild_id || data.author?.bot) return;
       await handleAntiSpam(api, data.guild_id, data);
       await handleMessage(api, data);
@@ -126,6 +128,7 @@ async function dispatch(event, data) {
     }
 
     else if (event === 'GUILD_MEMBER_ADD') {
+      if (data.guild_id) trackMember(data.guild_id, 'join').catch(() => {});
       const guildId = data.guild_id, userId = data.user?.id;
       if (!guildId || !userId) return;
       if (await isBlacklisted(guildId, userId)) {
