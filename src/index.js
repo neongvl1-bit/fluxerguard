@@ -67,6 +67,7 @@ const api = {
 let ws, heartbeatInterval, sessionId, resumeUrl, sequence = null;
 let botUser      = null;
 let reconnecting = false;
+const guildRegistry = new Map(); // guildId -> { id, name, ownerId, memberCount }
 let retryDelay   = 3000;
 
 // Intents: GUILDS(1) + GUILD_MEMBERS(2) + GUILD_MESSAGES(512) + MESSAGE_CONTENT(32768) + GUILD_MODERATION(4)
@@ -125,7 +126,18 @@ async function dispatch(event, data) {
     }
 
     else if (event === 'GUILD_CREATE') {
-      if (data.id && data.owner_id) { setOwner(data.id, data.owner_id); }
+      if (data.id && data.owner_id) {
+        setOwner(data.id, data.owner_id);
+        guildRegistry.set(String(data.id), {
+          id:       String(data.id),
+          name:     data.name     || 'Unknown',
+          ownerId:  String(data.owner_id),
+          memberCount: data.member_count || 0,
+        });
+      }
+    }
+    else if (event === 'GUILD_DELETE') {
+      if (data.id) guildRegistry.delete(String(data.id));
     }
 
     else if (event === 'GUILD_MEMBER_ADD') {
@@ -233,5 +245,6 @@ process.on('unhandledRejection', err => console.error('[UNHANDLED]', err?.messag
 connect();
 
 function getBotUser() { return botUser; }
-module.exports = { getBotUser };
+function getGuildRegistry() { return guildRegistry; }
+module.exports = { getBotUser, getGuildRegistry };
 
