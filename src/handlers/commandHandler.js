@@ -59,28 +59,51 @@ async function getRolePower(api, guildId, memberRoles) {
   } catch (_) { return 0; }
 }
 
+const ALLOWED_BITS = [
+  8n, 4n, 2n, 32n, 268435456n, 8192n, 16n,
+];
+
+function checkBits(permsStr) {
+  try {
+    const p = BigInt(permsStr || '0');
+    for (const bit of ALLOWED_BITS) {
+      if ((p & bit) === bit) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
 async function memberHasPermission(api, guildId, message) {
   try {
+    const userId = message.author?.id;
     const member = message.member;
 
-    // Varianta 1: permissions direct pe member din payload
-    if (member?.permissions !== undefined && member?.permissions !== null) {
-      try {
-        const perms = BigInt(member.permissions);
-        if ((perms & 8n) || (perms & 4n) || (perms & 2n) || (perms & 32n) || (perms & 268435456n))
-          return true;
-      } catch (_) {}
+    // 1. Server owner
+    try {
+      const guild = await api.guilds.get(guildId);
+      if (guild?.owner_id && String(guild.owner_id) === String(userId)) return true;
+    } catch (_) {}
+
+    // 2. permissions direct pe member object din gateway payload
+    if (member?.permissions != null) {
+      if (checkBits(member.permissions)) return true;
     }
 
-    // Varianta 2: calculeaza din roluri
-    const perms = await getPermBits(api, guildId, member?.roles);
-    return !!(
-      (perms & 8n) ||          // ADMINISTRATOR
-      (perms & 4n) ||          // BAN_MEMBERS
-      (perms & 2n) ||          // KICK_MEMBERS
-      (perms & 32n) ||         // MANAGE_GUILD
-      (perms & 268435456n)     // MANAGE_ROLES
-    );
+    // 3. Fetch member fresh — Fluxer poate returna permissions computed
+    try {
+      const freshMember = await api.guilds.getMember(guildId, userId);
+      if (freshMember?.permissions != null) {
+        if (checkBits(freshMember.permissions)) return true;
+      }
+      // 4. Fallback — calculeaza din roluri daca getRoles merge
+      const roleIds = freshMember?.roles || member?.roles || [];
+      if (roleIds.length) {
+        const perms = await getPermBits(api, guildId, roleIds);
+        if (checkBits(String(perms))) return true;
+      }
+    } catch (_) {}
+
+    return false;
   } catch (err) {
     console.error('[PERMS ERROR]', err.message);
     return false;
