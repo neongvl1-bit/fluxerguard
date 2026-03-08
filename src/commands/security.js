@@ -300,28 +300,39 @@ const activity = { name: 'activity', names: ['activity', 'dna', 'serverdna'], pe
     try {
       const { getDNAData }    = require('../utils/dna');
       const { generateChart } = require('../utils/chart');
-      const fs  = require('fs');
-      const data = await getDNAData(guildId);
+      const fs      = require('fs');
+      const fetch   = require('node-fetch');
+      const FormData = require('form-data');
+
+      const data    = await getDNAData(guildId);
       const imgPath = await generateChart(data);
       const imgBuffer = fs.readFileSync(imgPath);
-      const base64 = imgBuffer.toString('base64');
       fs.unlinkSync(imgPath);
 
-      // Trimite imaginea
-      await api.channels.createMessage(channelId, {
+      // Trimite cu multipart/form-data
+      const form = new FormData();
+      form.append('file', imgBuffer, { filename: 'dna.png', contentType: 'image/png' });
+      form.append('payload_json', JSON.stringify({
         embeds: [{
           color: 0x00E5FF,
-          title: '📊 Server DNA',
+          title: 'Server DNA',
           description: 'Activity Intelligence for the last 7 days.',
-          image: { url: `attachment://dna.png` },
+          image: { url: 'attachment://dna.png' },
           footer: { text: 'FluxerGuard Premium • Server DNA' },
           timestamp: new Date().toISOString(),
-        }],
-        attachments: [{
-          filename: 'dna.png',
-          data: base64,
         }]
+      }));
+
+      const TOKEN = process.env.FLUXER_BOT_TOKEN;
+      const res = await fetch(`https://api.fluxer.app/v1/channels/${channelId}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bot ${TOKEN}`, ...form.getHeaders() },
+        body: form,
       });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Upload failed ${res.status}: ${txt}`);
+      }
     } catch (err) {
       console.error('[ACTIVITY ERROR FULL]', err.stack || err);
       await api.channels.createMessage(channelId, {
