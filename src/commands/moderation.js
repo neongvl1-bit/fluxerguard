@@ -254,7 +254,8 @@ const clear = { name: 'clear', names: ['clear', 'purge'], permissions: true,
     // Fetch messages
     let messages;
     try {
-      messages = await api.channels.getMessages(channelId, { limit: amount + 1 });
+      const fetchLimit = Math.min(amount + 1, 100);
+      messages = await api.channels.getMessages(channelId, { limit: fetchLimit });
     } catch (err) {
       return send(api, channelId, mid,
         E.error('Failed to Fetch', `Could not fetch messages: ${err.message}`));
