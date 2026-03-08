@@ -137,8 +137,11 @@ const timeout = { name: 'timeout', names: ['timeout', 'mute'], permissions: true
       targetUser: member.user, reason: args.slice(2).join(' ') || 'No reason provided',
       duration: formatMs(parsed.ms), durationMs: parsed.ms });
     } catch (err) {
-      console.error('[TIMEOUT ERR]', err.stack || err);
-      return send(api, channelId, mid, E.error('Action Failed', err.message || 'Could not perform this action.'));
+      const is403 = err.message?.includes('403');
+      return send(api, channelId, mid, E.error(
+        is403 ? 'Not Supported' : 'Action Failed',
+        is403 ? 'Timeout is not yet fully supported on Fluxer. Please check back later.' : (err.message || 'Could not perform this action.')
+      ));
     }
   }
 };
