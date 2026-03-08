@@ -250,12 +250,12 @@ const lookup = { name: 'lookup', names: ['lookup', 'whois'], permissions: true,
 *(${accountAge} ago)*`, inline: true },
       { name: '📥 Joined Server', value: member ? `${joinedAt}
 *(${joinDays} days ago)*` : '*Not in server*', inline: true },
-      { name: '📋 Cases', value: `🔨 Bans: **${bans}** | 👟 Kicks: **${kicks}**
+      { name: `📋 Cases (${bans + kicks + warns + timeouts})`, value: `🔨 Bans: **${bans}** | 👟 Kicks: **${kicks}**
 ⚠️ Warns: **${warns}** | 🔇 Timeouts: **${timeouts}**`, inline: false },
     ];
 
     if (flags.length) {
-      fields.push({ name: '🚩 Flags', value: flags.join('  '), inline: false });
+      fields.push({ name: `🚩 Flags (${flags.length})`, value: flags.join('\n'), inline: false });
     }
 
     if (notes.length) {
