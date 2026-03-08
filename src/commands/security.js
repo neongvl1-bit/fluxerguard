@@ -323,7 +323,7 @@ const activity = { name: 'activity', names: ['activity', 'dna', 'serverdna'], pe
         }]
       });
     } catch (err) {
-      console.error('[ACTIVITY ERROR]', err.message);
+      console.error('[ACTIVITY ERROR FULL]', err.stack || err);
       await api.channels.createMessage(channelId, {
         embeds: [{ color: 0xED4245, title: '❌ Error', description: 'Could not generate chart: ' + err.message }]
       });
