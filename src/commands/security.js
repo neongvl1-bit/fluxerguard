@@ -286,5 +286,50 @@ const lookup = { name: 'lookup', names: ['lookup', 'whois'], permissions: true,
 };
 
 // ── Exports ───────────────────────────────────────────────────────────────────
+
+// ── ACTIVITY (Server DNA) ─────────────────────────────────────────────────────
+const activity = { name: 'activity', names: ['activity', 'dna', 'serverdna'], permissions: true,
+  async execute({ api, guildId, channelId, message }) {
+    const mid = message?.id;
+
+    // Loading message
+    const loading = await api.channels.replyMessage(channelId, mid, {
+      embeds: [{ color: 0x0099CC, description: '📊 Generating Server DNA chart...' }]
+    }).catch(() => null);
+
+    try {
+      const { getDNAData }    = require('../utils/dna');
+      const { generateChart } = require('../utils/chart');
+      const fs  = require('fs');
+      const data = await getDNAData(guildId);
+      const imgPath = await generateChart(data);
+      const imgBuffer = fs.readFileSync(imgPath);
+      const base64 = imgBuffer.toString('base64');
+      fs.unlinkSync(imgPath);
+
+      // Trimite imaginea
+      await api.channels.createMessage(channelId, {
+        embeds: [{
+          color: 0x00E5FF,
+          title: '📊 Server DNA',
+          description: 'Activity Intelligence for the last 7 days.',
+          image: { url: `attachment://dna.png` },
+          footer: { text: 'FluxerGuard Premium • Server DNA' },
+          timestamp: new Date().toISOString(),
+        }],
+        attachments: [{
+          filename: 'dna.png',
+          data: base64,
+        }]
+      });
+    } catch (err) {
+      console.error('[ACTIVITY ERROR]', err.message);
+      await api.channels.createMessage(channelId, {
+        embeds: [{ color: 0xED4245, title: '❌ Error', description: 'Could not generate chart: ' + err.message }]
+      });
+    }
+  }
+};
+
 module.exports = guardian;
-module.exports.extra = [threatlog, lockdown, unlockdown, note, lookup];
+module.exports.extra = [threatlog, lockdown, unlockdown, note, lookup, activity];
