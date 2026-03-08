@@ -275,32 +275,11 @@ const clear = { name: 'clear', names: ['clear', 'purge'], permissions: true,
       return send(api, channelId, mid,
         E.error('No Messages', 'No messages found to delete.'));
 
-    let deleted = 0;
-
-    // Incearca bulk delete intai
-    if (toDelete.length > 1) {
-      try {
-        await api.channels.bulkDeleteMessages(channelId, { messages: toDelete });
-        deleted = toDelete.length;
-      } catch (_) {
-        // Bulk delete nu e suportat — fallback la delete individual
-        for (const msgId of toDelete) {
-          try {
-            await api.channels.deleteMessage(channelId, msgId);
-            deleted++;
-            await new Promise(r => setTimeout(r, 300));
-          } catch (_) {}
-        }
-      }
-    } else {
-      try {
-        await api.channels.deleteMessage(channelId, toDelete[0]);
-        deleted = 1;
-      } catch (err) {
-        return send(api, channelId, mid,
-          E.error('Failed to Delete', `Could not delete message: ${err.message}`));
-      }
-    }
+    // Delete toate mesajele in paralel simultan
+    const results = await Promise.allSettled(
+      toDelete.map(msgId => api.channels.deleteMessage(channelId, msgId))
+    );
+    const deleted = results.filter(r => r.status === 'fulfilled').length;
 
     // Sterge si comanda originala
     if (mid) api.channels.deleteMessage(channelId, mid).catch(() => {});
@@ -313,10 +292,10 @@ const clear = { name: 'clear', names: ['clear', 'purge'], permissions: true,
     }
 
     await sendLog(api, guildId, 'CLEAR', {
-      'Channel':          `<#${channelId}> (${channelId})`,
+      'Channel':          `#${channelId}`,
       'Messages Deleted': String(deleted),
       'Cleared by':       `${author.username} (${author.id})`,
-    }, { caseId: null, action: 'CLEAR' });
+    }, null);
   }
 };
 
