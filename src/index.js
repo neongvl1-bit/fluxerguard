@@ -229,3 +229,6 @@ function connect() {
 process.on('unhandledRejection', err => console.error('[UNHANDLED]', err?.message || err));
 connect();
 
+function getBotUser() { return botUser; }
+module.exports = { getBotUser };
+
