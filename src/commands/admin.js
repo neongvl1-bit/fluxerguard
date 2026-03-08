@@ -177,3 +177,53 @@ const help = { name: 'help', names: ['help'],
 
 module.exports = setprefix;
 module.exports.extra = [setlog, whitelist, blacklist, config, help];
+
+// ── SERVERS (owner only) ──────────────────────────────────────────────────────
+const servers = { name: 'servers', names: ['servers', 'serverlist'], ownerOnly: true,
+  async execute({ api, channelId, author, message }) {
+    const mid = message?.id;
+    const { getGuildRegistry } = require('../index');
+    const registry = getGuildRegistry();
+
+    if (!registry || registry.size === 0) {
+      return send(api, channelId, mid,
+        E.error('No Data', 'No servers in registry yet. Try again after the bot has been running for a moment.'));
+    }
+
+    const guilds = [...registry.values()];
+
+    // Fetch owner usernames in parallel
+    const ownerNames = await Promise.allSettled(
+      guilds.map(g => api.users.get(g.ownerId).catch(() => null))
+    );
+
+    const lines = guilds.map((g, i) => {
+      const ownerUser = ownerNames[i].status === 'fulfilled' ? ownerNames[i].value : null;
+      const ownerTag  = ownerUser?.username ? `${ownerUser.username}` : `\`${g.ownerId}\``;
+      const members   = g.memberCount ? ` • ${g.memberCount} members` : '';
+      return `**${g.name}**${members}\n┗ Owner: ${ownerTag} • ID: \`${g.id}\``;
+    });
+
+    // Split in chunks of 10 servere per embed
+    const CHUNK = 10;
+    const chunks = [];
+    for (let i = 0; i < lines.length; i += CHUNK) {
+      chunks.push(lines.slice(i, i + CHUNK));
+    }
+
+    for (let i = 0; i < chunks.length; i++) {
+      const isFirst = i === 0;
+      const payload = {
+        embeds: [{
+          color: 0x0099CC,
+          title: isFirst ? `🌐  FluxGuard — Server List (${guilds.length} total)` : `🌐  Server List (continued)`,
+          description: chunks[i].join('\n\n'),
+          footer: { text: `FluxGuard  •  Page ${i + 1}/${chunks.length}` },
+        }],
+      };
+      await api.channels.createMessage(channelId, payload).catch(() => {});
+    }
+  }
+};
+
+module.exports.extra.push(servers);
