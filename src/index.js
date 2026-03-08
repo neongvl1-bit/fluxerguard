@@ -59,7 +59,8 @@ const api = {
   },
   users: {
     get:      (userId) => api.get(`/users/${userId}`),
-    createDM: (userId) => api.post('/users/@me/channels', { recipient_id: userId }),
+    createDM:    (userId) => api.post('/users/@me/channels', { recipient_id: userId }),
+    getGuilds:   ()       => api.get('/users/@me/guilds'),
   },
 };
 
