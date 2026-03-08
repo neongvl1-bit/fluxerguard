@@ -240,3 +240,83 @@ const delwarn = { name: 'delwarn', names: ['delwarn', 'deletewarn', 'unwarn'], p
 };
 
 module.exports.extra = [kick, warn, unban, timeout, untimeout, caseCmd, delwarn];
+
+// ── CLEAR ─────────────────────────────────────────────────────────────────────
+const clear = { name: 'clear', names: ['clear', 'purge'], permissions: true,
+  async execute({ api, args, guildId, channelId, author, message }) {
+    const mid = message?.id;
+
+    const amount = parseInt(args[0]);
+    if (!args[0] || isNaN(amount) || amount < 1 || amount > 100)
+      return send(api, channelId, mid,
+        E.error('Invalid Amount', 'Usage: `!clear <1-100>`\nExample: `!clear 10`\nYou can delete between **1** and **100** messages at once.'));
+
+    // Fetch messages
+    let messages;
+    try {
+      messages = await api.channels.getMessages(channelId, { limit: amount + 1 });
+    } catch (err) {
+      return send(api, channelId, mid,
+        E.error('Failed to Fetch', `Could not fetch messages: ${err.message}`));
+    }
+
+    if (!Array.isArray(messages) || messages.length === 0)
+      return send(api, channelId, mid,
+        E.error('No Messages', 'No messages found to delete.'));
+
+    // Exclude comanda proprie daca e in lista
+    const toDelete = messages
+      .filter(m => m.id !== mid)
+      .slice(0, amount)
+      .map(m => m.id);
+
+    if (toDelete.length === 0)
+      return send(api, channelId, mid,
+        E.error('No Messages', 'No messages found to delete.'));
+
+    let deleted = 0;
+
+    // Incearca bulk delete intai
+    if (toDelete.length > 1) {
+      try {
+        await api.channels.bulkDeleteMessages(channelId, { messages: toDelete });
+        deleted = toDelete.length;
+      } catch (_) {
+        // Bulk delete nu e suportat — fallback la delete individual
+        for (const msgId of toDelete) {
+          try {
+            await api.channels.deleteMessage(channelId, msgId);
+            deleted++;
+            await new Promise(r => setTimeout(r, 300));
+          } catch (_) {}
+        }
+      }
+    } else {
+      try {
+        await api.channels.deleteMessage(channelId, toDelete[0]);
+        deleted = 1;
+      } catch (err) {
+        return send(api, channelId, mid,
+          E.error('Failed to Delete', `Could not delete message: ${err.message}`));
+      }
+    }
+
+    // Sterge si comanda originala
+    if (mid) api.channels.deleteMessage(channelId, mid).catch(() => {});
+
+    // Confirmare temporara (dispare dupa 4s)
+    const confirm = await send(api, channelId,
+      E.success('Messages Cleared', `Successfully deleted **${deleted}** message${deleted !== 1 ? 's' : ''} in this channel.\n*Cleared by ${author.username}*`));
+    if (confirm?.id) {
+      setTimeout(() => api.channels.deleteMessage(channelId, confirm.id).catch(() => {}), 4000);
+    }
+
+    await sendLog(api, guildId, 'CLEAR', {
+      'Channel':          `<#${channelId}> (${channelId})`,
+      'Messages Deleted': String(deleted),
+      'Cleared by':       `${author.username} (${author.id})`,
+    }, { caseId: null, action: 'CLEAR' });
+  }
+};
+
+module.exports.extra.push(clear);
