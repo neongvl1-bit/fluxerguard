@@ -10,7 +10,6 @@
     "ws": "^8.18.0",
     "node-fetch": "^2.7.0",
     "@supabase/supabase-js": "^2.43.0",
-    "dotenv": "^16.4.5",
-    "canvas": "^2.11.2"
+    "dotenv": "^16.4.5"
   }
 }
