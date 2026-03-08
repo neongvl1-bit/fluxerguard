@@ -17,6 +17,27 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
     await api.channels.createMessage(dm.id, modDM(action, 'this server', reason, entry.caseId, modUser.username, duration));
   } catch (_) {}
 
+  // DEBUG permisiuni bot
+  try {
+    const { getBotUser } = require('../index');
+    const botUser = getBotUser();
+    if (botUser) {
+      const member = await api.guilds.getMember(guildId, botUser.id).catch(() => null);
+      const roles  = await api.guilds.getRoles(guildId).catch(() => []);
+      const allRoles = Array.isArray(roles) ? roles : (roles?.roles || []);
+      const myRoleIds = new Set((member?.roles || []).map(String));
+      let perms = 0n;
+      for (const role of allRoles) {
+        if (String(role.id) === String(guildId) || myRoleIds.has(String(role.id))) {
+          try { perms |= BigInt(role.permissions || '0'); } catch (_) {}
+        }
+      }
+      console.log(`[BOT PERMS DEBUG] action=${action} botId=${botUser.id} roles=${[...myRoleIds].join(',')} permBits=${perms.toString()}`);
+    }
+  } catch (dbgErr) {
+    console.log('[BOT PERMS DEBUG ERROR]', dbgErr.message);
+  }
+
   // Executa actiunea
   try {
     if (action === 'BAN')       await api.guilds.banUser(guildId, targetUser.id, { reason });
