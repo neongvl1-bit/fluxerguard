@@ -199,9 +199,6 @@ async function handleMessage(api, message) {
     }
   }
 
-  const { trackCommand } = require('../utils/dna');
-  trackCommand(message.guild_id, cmdName).catch(() => {});
-
   try {
     await cmd.execute({
       api,
