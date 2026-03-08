@@ -143,7 +143,7 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
           color: 0x43B581,
           title: '✅ Setting Updated',
           description: `**${moduleName}** → **${displayKey}** has been set to **${displayVal}**.`,
-          footer: { text: 'FluxerGuard • Use !config to view all settings' },
+          footer: { text: 'FluxGuard • Use !config to view all settings' },
           timestamp: new Date().toISOString(),
         }]
       });
