@@ -8,7 +8,7 @@ const ICONS = {
   ANTIRAID:'🛡️', ANTINUKE:'💥', ANTISPAM:'🚫',
   INFO:'ℹ️', SUCCESS:'✅', ERROR:'❌', SHIELD:'🛡️', CASE:'📋', SETTINGS:'⚙️',
 };
-const FOOTER = 'FluxerGuard';
+const FOOTER = 'FluxGuard';
 
 function ts() { return new Date().toISOString(); }
 
@@ -115,7 +115,7 @@ function caseHistory(userId, cases) {
 // ── Config ────────────────────────────────────────────────────────────────────
 function configEmbed(g) {
   const logStr = g.log_channel ? `<#${g.log_channel}>` : '`not set`';
-  return embed(COLORS.INFO, '⚙️  FluxerGuard Configuration',
+  return embed(COLORS.INFO, '⚙️  FluxGuard Configuration',
     `Prefix: \`${g.prefix}\`  •  Log Channel: ${logStr}`,
     [
       field('🛡️ AntiRaid',
@@ -176,7 +176,7 @@ function helpEmbed(prefix, category) {
     return embed(COLORS.INFO, `${cat.icon}  ${cat.title}`, `Use \`${p}help\` to return to the main menu.`, cat.fields);
   }
 
-  return embed(COLORS.INFO, '🛡️  FluxerGuard',
+  return embed(COLORS.INFO, '🛡️  FluxGuard',
     'A powerful security & moderation bot.\nPick a category below:',
     [
       field('🔨 Moderation', `\`${p}help moderation\``, true),
