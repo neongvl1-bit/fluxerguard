@@ -32,7 +32,10 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
           try { perms |= BigInt(role.permissions || '0'); } catch (_) {}
         }
       }
-      console.log(`[BOT PERMS DEBUG] action=${action} botId=${botUser.id} roles=${[...myRoleIds].join(',')} permBits=${perms.toString()}`);
+      console.log(`[BOT PERMS DEBUG] action=${action} botId=${botUser.id} permBits=${perms.toString()}`);
+      console.log('[BOT ROLES RAW]', JSON.stringify(allRoles.slice(0, 3)));
+      console.log('[BOT MY ROLE IDS]', [...myRoleIds]);
+      console.log('[BOT MEMBER RAW]', JSON.stringify(member));
     }
   } catch (dbgErr) {
     console.log('[BOT PERMS DEBUG ERROR]', dbgErr.message);
