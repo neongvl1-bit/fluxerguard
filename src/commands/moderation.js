@@ -36,8 +36,12 @@ const ban = { name: 'ban', names: ['ban'], permissions: true,
       E.error('User Not Found', 'Could not find that user.\nUsage: `!ban <@user|ID> [reason]`'));
     const check = await canTarget(user.id);
     if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
-    await doModAction({ api, guildId, channelId, modUser: author, action: 'BAN',
+    try {
+      await doModAction({ api, guildId, channelId, modUser: author, action: 'BAN',
       targetUser: user, reason: args.slice(1).join(' ') || 'No reason provided' });
+    } catch (err) {
+      return send(api, channelId, mid, E.error('Action Failed', err.message || 'Could not perform this action.'));
+    }
   }
 };
 
@@ -52,8 +56,12 @@ const kick = { name: 'kick', names: ['kick'], permissions: true,
       E.error('Member Not Found', 'That user is not in this server.\nUsage: `!kick <@user|ID> [reason]`'));
     const check = await canTarget(member.user.id);
     if (!check.ok) return send(api, channelId, mid, E.error('Action Denied', check.reason));
-    await doModAction({ api, guildId, channelId, modUser: author, action: 'KICK',
+    try {
+      await doModAction({ api, guildId, channelId, modUser: author, action: 'KICK',
       targetUser: member.user, reason: args.slice(1).join(' ') || 'No reason provided' });
+    } catch (err) {
+      return send(api, channelId, mid, E.error('Action Failed', err.message || 'Could not perform this action.'));
+    }
   }
 };
 
@@ -99,8 +107,12 @@ const unban = { name: 'unban', names: ['unban'], permissions: true,
       E.error('Invalid ID', 'Please provide a valid numeric user ID.\nUsage: `!unban <userID> [reason]`'));
     const user = await api.users.get(args[0]).catch(() => null);
     if (!user) return send(api, channelId, mid, E.error('User Not Found', 'Could not find a user with that ID.'));
-    await doModAction({ api, guildId, channelId, modUser: author, action: 'UNBAN',
+    try {
+      await doModAction({ api, guildId, channelId, modUser: author, action: 'UNBAN',
       targetUser: user, reason: args.slice(1).join(' ') || 'No reason provided' });
+    } catch (err) {
+      return send(api, channelId, mid, E.error('Action Failed', err.message || 'Could not perform this action.'));
+    }
   }
 };
 
@@ -120,9 +132,13 @@ const timeout = { name: 'timeout', names: ['timeout', 'mute'], permissions: true
     const parsed = parseDuration(args[1]);
     if (!parsed) return send(api, channelId, mid,
       E.error('Invalid Duration', `\`${args[1]}\` is not a valid duration.\nValid formats: \`30s\` \`10m\` \`2h\` \`1d\` *(max 28d)*`));
-    await doModAction({ api, guildId, channelId, modUser: author, action: 'TIMEOUT',
+    try {
+      await doModAction({ api, guildId, channelId, modUser: author, action: 'TIMEOUT',
       targetUser: member.user, reason: args.slice(2).join(' ') || 'No reason provided',
       duration: formatMs(parsed.ms), durationMs: parsed.ms });
+    } catch (err) {
+      return send(api, channelId, mid, E.error('Action Failed', err.message || 'Could not perform this action.'));
+    }
   }
 };
 
@@ -141,8 +157,12 @@ const untimeout = { name: 'untimeout', names: ['untimeout', 'unmute'], permissio
       new Date(member.communication_disabled_until) > new Date();
     if (!isTimedOut) return send(api, channelId, mid,
       E.error('Not Timed Out', 'That user does not have an active timeout.'));
-    await doModAction({ api, guildId, channelId, modUser: author, action: 'UNTIMEOUT',
+    try {
+      await doModAction({ api, guildId, channelId, modUser: author, action: 'UNTIMEOUT',
       targetUser: member.user, reason: args.slice(1).join(' ') || 'Timeout removed' });
+    } catch (err) {
+      return send(api, channelId, mid, E.error('Action Failed', err.message || 'Could not perform this action.'));
+    }
   }
 };
 
