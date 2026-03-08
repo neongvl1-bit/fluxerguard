@@ -238,7 +238,7 @@ const lookup = { name: 'lookup', names: ['lookup', 'whois'], permissions: true,
     if (bl)                                    flags.push('🚫 Blacklisted');
     if (wl)                                    flags.push('✅ Whitelisted');
     if (joinDays !== null && joinDays < 7)      flags.push('🆕 New Member');
-    if (member?.communication_disabled_until)  flags.push('🔇 Currently Timed Out');
+    if (member?.communication_disabled_until && new Date(member.communication_disabled_until) > new Date())  flags.push('🔇 Currently Timed Out');
     if (!member)                                flags.push('⚠️ Not in Server');
 
     const color = risk >= 50 ? 0xED4245 : risk >= 25 ? 0xFFC107 : risk >= 10 ? 0xFF8C00 : 0x43B581;
