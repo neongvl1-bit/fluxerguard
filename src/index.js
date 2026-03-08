@@ -143,11 +143,11 @@ async function dispatch(event, data) {
       await handleAntiRaid(api, guildId, data);
     }
 
-    else if (['CHANNEL_DELETE','CHANNEL_CREATE','GUILD_ROLE_DELETE','GUILD_ROLE_CREATE'].includes(event)) {
+    else if (['CHANNEL_DELETE','GUILD_ROLE_DELETE'].includes(event)) {
       const guildId = data.guild_id;
       if (!guildId) return;
       await new Promise(r => setTimeout(r, 1500));
-      const typeMap = { CHANNEL_DELETE: 12, CHANNEL_CREATE: 10, GUILD_ROLE_DELETE: 32, GUILD_ROLE_CREATE: 30 };
+      const typeMap = { CHANNEL_DELETE: 12, GUILD_ROLE_DELETE: 32 };
       try {
         const logs  = await api.guilds.getAuditLog(guildId, { limit: 1, action_type: typeMap[event] });
         const entry = logs?.audit_log_entries?.[0];
