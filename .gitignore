@@ -1,0 +1,21 @@
+# Environment — NEVER upload
+.env
+.env.local
+.env.*
+
+# Dependencies
+node_modules/
+
+# Backup files
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime
+*.pid
