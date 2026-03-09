@@ -292,9 +292,9 @@ const clear = { name: 'clear', names: ['clear', 'purge'], permissions: true,
     }
 
     await sendLog(api, guildId, 'CLEAR', {
-      'Channel':          `#${channelId}`,
+      'Channel': `<#${channelId}>`,
       'Messages Deleted': String(deleted),
-      'Cleared by':       `${author.username} (${author.id})`,
+      'Cleared by':       `${author.username}`,
     }, null);
   }
 };
