@@ -37,10 +37,12 @@ async function handleAntiNuke(api, guildId, eventName, executorId) {
     }
 
     const reason = `[AntiNuke] ${recent.length} destructive actions in ${cfg.antinuke_interval / 1000}s`;
+    let nukeGuildName = 'the server';
+    try { const ng = await api.guilds.get(guildId); if (ng?.name) nukeGuildName = ng.name; } catch (_) {}
     try {
       try {
         const dm = await api.users.createDM(executorId);
-        await api.channels.createMessage(dm.id, { content: `💥 **Automated Action: BAN**\nReason: ${reason}` });
+        await api.channels.createMessage(dm.id, { content: `💥 **Automated Action: BAN** in **${nukeGuildName}**\nReason: ${reason}` });
       } catch (_) {}
       await api.guilds.banUser(guildId, executorId, { reason });
       const entry = await createCase(guildId, { action: 'BAN', userId: executorId, userTag: executorId, modId: 'bot', modTag: 'FluxGuard', reason, auto: true });
