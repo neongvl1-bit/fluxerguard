@@ -77,9 +77,11 @@ async function punish(api, guildId, message, cfg, reason) {
     else if (action === 'ban')
       await api.guilds.banUser(guildId, user.id, { reason });
 
+    let spamGuildName = 'the server';
+    try { const sg = await api.guilds.get(guildId); if (sg?.name) spamGuildName = sg.name; } catch (_) {}
     try {
       const dm = await api.users.createDM(user.id);
-      await api.channels.createMessage(dm.id, { content: `🚫 **Automated Action: ${action.toUpperCase()}**\nReason: ${reason}` });
+      await api.channels.createMessage(dm.id, { content: `🚫 **Automated Action: ${action.toUpperCase()}** in **${spamGuildName}**\nReason: ${reason}` });
     } catch (_) {}
 
     const entry = await createCase(guildId, {
