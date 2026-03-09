@@ -40,10 +40,12 @@ async function handleAntiRaid(api, guildId, member) {
       if (await isWhitelisted(guildId, userId)) continue;
       if (await isPrivileged(api, guildId, userId, [])) continue;
       const reason = `[AntiRaid] Mass join detected — auto ${cfg.antiraid_action}`;
+      let raidGuildName = 'the server';
+      try { const rg = await api.guilds.get(guildId); if (rg?.name) raidGuildName = rg.name; } catch (_) {}
       try {
         try {
           const dm = await api.users.createDM(userId);
-          await api.channels.createMessage(dm.id, { content: `🛡️ **Automated Action: ${cfg.antiraid_action.toUpperCase()}**\nReason: ${reason}` });
+          await api.channels.createMessage(dm.id, { content: `🛡️ **Automated Action: ${cfg.antiraid_action.toUpperCase()}** in **${raidGuildName}**\nReason: ${reason}` });
         } catch (_) {}
         if (cfg.antiraid_action === 'ban') await api.guilds.banUser(guildId, userId, { reason });
         else await api.guilds.removeMember(guildId, userId);
