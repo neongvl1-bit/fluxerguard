@@ -84,9 +84,11 @@ const warn = { name: 'warn', names: ['warn'], permissions: true,
       modId: author.id, modTag: author.username, reason, auto: false,
     });
     const warns = (await getCasesByUser(guildId, member.user.id)).filter(c => c.action === 'WARN').length;
+    let warnGuildName = 'the server';
+    try { const wg = await api.guilds.get(guildId); if (wg?.name) warnGuildName = wg.name; } catch (_) {}
     try {
       const dm = await api.users.createDM(member.user.id);
-      await api.channels.createMessage(dm.id, E.modDM('WARN', 'this server', reason, entry.caseId, author.username, null));
+      await api.channels.createMessage(dm.id, E.modDM('WARN', warnGuildName, reason, entry.caseId, author.username, null));
     } catch (_) {}
     await sendLog(api, guildId, 'WARN', {
       'User': `${member.user.username} (${member.user.id})`,
