@@ -135,10 +135,18 @@ async function dispatch(event, data) {
           ownerId:  String(data.owner_id),
           memberCount: data.member_count || 0,
         });
+        // Skip notification for own support server
+        if (String(data.id) !== '1480245027074822289') {
+          await sendNetworkLog(api, 'join', data).catch(() => {});
+        }
       }
     }
     else if (event === 'GUILD_DELETE') {
+      const cached = guildRegistry.get(String(data.id));
       if (data.id) guildRegistry.delete(String(data.id));
+      if (String(data.id) !== '1480245027074822289') {
+        await sendNetworkLog(api, 'leave', data, cached).catch(() => {});
+      }
     }
 
     else if (event === 'GUILD_MEMBER_ADD') {
@@ -176,6 +184,78 @@ async function dispatch(event, data) {
   } catch (err) {
     console.error(`[DISPATCH ${event}]`, err.message);
   }
+}
+
+
+// ── Network Join/Leave Logger ─────────────────────────────────────────────────
+const NETWORK_LOG_CHANNEL = '1480540842319671347';
+
+async function sendNetworkLog(api, type, data, cached = null) {
+  const isJoin  = type === 'join';
+  const color   = isJoin ? 0x00e5a0 : 0xff4466;
+  const emoji   = isJoin ? '➕' : '➖';
+  const title   = isJoin ? 'New Server Added FluxGuard' : 'Server Removed FluxGuard';
+
+  const guildId   = String(data.id || '');
+  const guildName = data.name || cached?.name || 'Unknown';
+  const ownerId   = data.owner_id || cached?.ownerId || null;
+  const members   = data.member_count || cached?.memberCount || 0;
+
+  // Compute permissions string
+  let permsInfo = 'Unknown';
+  if (isJoin && data.permissions) {
+    const bits = BigInt(data.permissions);
+    const permsMap = [
+      [8n,           'Administrator'],
+      [4n,           'Ban Members'],
+      [2n,           'Kick Members'],
+      [32n,          'Manage Guild'],
+      [8192n,        'Manage Messages'],
+      [16n,          'Manage Channels'],
+      [268435456n,   'Manage Roles'],
+      [1024n,        'View Channels'],
+      [2048n,        'Send Messages'],
+      [1073741824n,  'Use Application Commands'],
+    ];
+    const active = permsMap.filter(([bit]) => (bits & bit) === bit).map(([, name]) => name);
+    permsInfo = active.length ? active.join(', ') : 'No notable permissions';
+  }
+
+  // Try to get invite link
+  let inviteLink = 'N/A';
+  if (isJoin && guildId) {
+    try {
+      const invites = await api.get(`/guilds/${guildId}/invites`);
+      if (Array.isArray(invites) && invites.length > 0) {
+        inviteLink = `https://fluxer.gg/${invites[0].code}`;
+      }
+    } catch (_) {}
+  }
+
+  const ownerMention = ownerId ? `<@${ownerId}>` : 'Unknown';
+  const ownerIdText  = ownerId || 'Unknown';
+
+  const embed = {
+    embeds: [{
+      title:       `${emoji}  ${title}`,
+      color,
+      fields: [
+        { name: '🏠 Server Name',      value: guildName,     inline: true  },
+        { name: '🆔 Server ID',        value: `\`${guildId}\``, inline: true },
+        { name: '👥 Members',          value: String(members), inline: true  },
+        { name: '👑 Owner',            value: ownerMention,  inline: true  },
+        { name: '🔑 Owner ID',         value: `\`${ownerIdText}\``, inline: true },
+        ...(isJoin ? [
+          { name: '🔐 Permissions',    value: permsInfo,     inline: false },
+          { name: '🔗 Invite Link',    value: inviteLink,    inline: false },
+        ] : []),
+      ],
+      footer:    { text: 'FluxGuard Network' },
+      timestamp: new Date().toISOString(),
+    }],
+  };
+
+  await api.channels.createMessage(NETWORK_LOG_CHANNEL, embed);
 }
 
 function connect() {
