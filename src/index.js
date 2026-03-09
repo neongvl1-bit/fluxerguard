@@ -137,7 +137,7 @@ async function dispatch(event, data) {
         });
         // Skip notification for own support server
         if (String(data.id) !== '1480245027074822289') {
-          await sendNetworkLog(api, 'join', data).catch(() => {});
+          await sendNetworkLog(api, 'join', data, null, guildRegistry.size).catch(() => {});
         }
       }
     }
@@ -145,7 +145,7 @@ async function dispatch(event, data) {
       const cached = guildRegistry.get(String(data.id));
       if (data.id) guildRegistry.delete(String(data.id));
       if (String(data.id) !== '1480245027074822289') {
-        await sendNetworkLog(api, 'leave', data, cached).catch(() => {});
+        await sendNetworkLog(api, 'leave', data, cached, guildRegistry.size).catch(() => {});
       }
     }
 
@@ -190,7 +190,7 @@ async function dispatch(event, data) {
 // ── Network Join/Leave Logger ─────────────────────────────────────────────────
 const NETWORK_LOG_CHANNEL = '1480540842319671347';
 
-async function sendNetworkLog(api, type, data, cached = null) {
+async function sendNetworkLog(api, type, data, cached = null, serverCount = 0) {
   const isJoin  = type === 'join';
   const color   = isJoin ? 0x00e5a0 : 0xff4466;
   const emoji   = isJoin ? '➕' : '➖';
@@ -243,6 +243,7 @@ async function sendNetworkLog(api, type, data, cached = null) {
         { name: '🏠 Server Name',      value: guildName,     inline: true  },
         { name: '🆔 Server ID',        value: `\`${guildId}\``, inline: true },
         { name: '👥 Members',          value: String(members), inline: true  },
+        { name: '🌐 Total Servers',      value: String(serverCount), inline: true  },
         { name: '👑 Owner',            value: ownerMention,  inline: true  },
         { name: '🔑 Owner ID',         value: `\`${ownerIdText}\``, inline: true },
         ...(isJoin ? [
