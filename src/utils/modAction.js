@@ -70,10 +70,17 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
     reason, duration, auto: false,
   });
 
+  // Fetch guild name for DM
+  let guildName = 'the server';
+  try {
+    const g = await api.guilds.get(guildId);
+    if (g?.name) guildName = g.name;
+  } catch (_) {}
+
   // DM user sanctionat
   try {
     const dm = await api.users.createDM(targetUser.id);
-    await api.channels.createMessage(dm.id, modDM(action, 'this server', reason, entry.caseId, modUser.username, duration));
+    await api.channels.createMessage(dm.id, modDM(action, guildName, reason, entry.caseId, modUser.username, duration));
   } catch (_) {}
 
   // Executa actiunea
