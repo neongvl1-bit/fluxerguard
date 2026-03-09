@@ -74,40 +74,40 @@ function checkBits(permsStr) {
 }
 
 async function memberHasPermission(api, guildId, message) {
+  const userId = String(message.author?.id || '');
+  const member = message.member;
+
+  // 1. Bot owner — acces total
+  if (isOwner(userId)) return true;
+
+  // 2. Server owner — fetch guild
   try {
-    const userId = message.author?.id;
-    const member = message.member;
+    const guild = await api.guilds.get(guildId);
+    if (guild?.owner_id && String(guild.owner_id) === userId) return true;
+  } catch (e) { console.error('[PERMS] guild fetch error:', e.message); }
 
-    // 1. Server owner
-    try {
-      const guild = await api.guilds.get(guildId);
-      if (guild?.owner_id && String(guild.owner_id) === String(userId)) return true;
-    } catch (_) {}
+  // 3. permissions pe member din MESSAGE_CREATE payload (cel mai rapid)
+  if (member?.permissions != null) {
+    if (checkBits(String(member.permissions))) return true;
+  }
 
-    // 2. permissions direct pe member object din gateway payload
-    if (member?.permissions != null) {
-      if (checkBits(member.permissions)) return true;
+  // 4. Fetch member fresh
+  try {
+    const freshMember = await api.guilds.getMember(guildId, userId);
+
+    if (freshMember?.permissions != null) {
+      if (checkBits(String(freshMember.permissions))) return true;
     }
 
-    // 3. Fetch member fresh — Fluxer poate returna permissions computed
-    try {
-      const freshMember = await api.guilds.getMember(guildId, userId);
-      if (freshMember?.permissions != null) {
-        if (checkBits(freshMember.permissions)) return true;
-      }
-      // 4. Fallback — calculeaza din roluri daca getRoles merge
-      const roleIds = freshMember?.roles || member?.roles || [];
-      if (roleIds.length) {
-        const perms = await getPermBits(api, guildId, roleIds);
+    // 5. Calculeaza din roluri (fallback daca getRoles merge pe Fluxer)
+    const roleIds = freshMember?.roles || member?.roles || [];
+    if (roleIds.length) {
+      const perms = await getPermBits(api, guildId, roleIds);
         if (checkBits(String(perms))) return true;
-      }
-    } catch (_) {}
+    }
+  } catch (e) { console.error('[PERMS] getMember error:', e.message); }
 
-    return false;
-  } catch (err) {
-    console.error('[PERMS ERROR]', err.message);
-    return false;
-  }
+  return false;
 }
 
 // Verifica daca autorul poate actiona asupra target-ului
@@ -152,33 +152,6 @@ async function handleMessage(api, message) {
   const cmdName = args.shift().toLowerCase();
 
   // ── DEBUG COMMANDS ────────────────────────────────────────────────────────
-
-  if (cmdName === 'debugperms') {
-    const info = { author_id: message.author?.id, member: message.member };
-    console.log('[DEBUGPERMS]', JSON.stringify(info, null, 2));
-    await api.channels.createMessage(message.channel_id, {
-      content: '```json\n' + JSON.stringify(info, null, 2).slice(0, 1800) + '\n```'
-    });
-    return;
-  }
-
-  if (cmdName === 'debugroles') {
-    try {
-      const rolesData     = await api.get(`/guilds/${message.guild_id}/roles`);
-      const allRoles      = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
-      const memberRoleIds = new Set((message.member?.roles || []).map(r => String(r)));
-      const lines = allRoles.map(r => {
-        const mine = memberRoleIds.has(String(r.id)) ? '[YOU]' : '     ';
-        return `${mine} ${r.name.padEnd(25)} ${r.permissions}`;
-      });
-      await api.channels.createMessage(message.channel_id, {
-        content: `**Your roles:** ${[...memberRoleIds].join(', ') || '(none)'}\n\`\`\`\n${lines.join('\n').slice(0, 1500)}\n\`\`\``
-      });
-    } catch (err) {
-      await api.channels.createMessage(message.channel_id, { content: `❌ debugroles error: \`${err.message}\`` });
-    }
-    return;
-  }
 
   // ── COMENZI NORMALE ───────────────────────────────────────────────────────
 
