@@ -1,6 +1,6 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
 const { sendLog }    = require('../utils/logger');
-const { alertEmbed } = require('../utils/embeds');
+const { alertEmbed, sendAlertPing } = require('../utils/embeds');
 const { isPrivileged } = require('../utils/isPrivileged');
 
 const tracker = new Map();
@@ -30,9 +30,11 @@ async function handleAntiNuke(api, guildId, eventName, executorId) {
       if (s.log_channel) {
         await api.channels.createMessage(s.log_channel, alertEmbed('ANTINUKE',
           `User \`${executorId}\` performed **${recent.length}** destructive actions in **${cfg.antinuke_interval / 1000}s**.`,
-          { 'User': `\`${executorId}\``, 'Actions': recent.map(a => a.event).join(', '), 'Threshold': `${cfg.antinuke_threshold} actions / ${cfg.antinuke_interval / 1000}s` }
+          { 'User': `\`${executorId}\``, 'Actions': recent.map(a => a.event).join(', '), 'Threshold': `${cfg.antinuke_threshold} actions / ${cfg.antinuke_interval / 1000}s` },
+          'alert'
         )).catch(() => {});
       }
+      await sendAlertPing(api, guildId, 'ANTINUKE');
       return;
     }
 
