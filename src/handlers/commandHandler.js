@@ -162,7 +162,7 @@ async function handleMessage(api, message) {
   if (cmd.permissions && !isOwner(message.author.id)) {
     const allowed = await memberHasPermission(api, message.guild_id, message);
     if (!allowed) {
-      await api.channels.createMessage(message.channel_id, {
+      await api.channels.replyMessage(message.channel_id, message.id, {
         content: '❌ You need Administrator, Ban Members, Kick Members, or Manage Server to use this command.'
       });
       return;
@@ -188,7 +188,7 @@ async function handleMessage(api, message) {
       }
     } catch (_) {}
     if (!isServerOwner && !hasAdmin) {
-      await api.channels.createMessage(message.channel_id, {
+      await api.channels.replyMessage(message.channel_id, message.id, {
         content: '❌ You need **Administrator** permission to use this command.'
       });
       return;
@@ -207,7 +207,7 @@ async function handleMessage(api, message) {
     });
   } catch (err) {
     console.error(`[CMD ERROR] ${cmdName}:`, err.message);
-    await api.channels.createMessage(message.channel_id, {
+    await api.channels.replyMessage(message.channel_id, message.id, {
       content: `❌ Error: ${err.message}`
     }).catch(() => {});
   }
