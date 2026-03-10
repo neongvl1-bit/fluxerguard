@@ -1,5 +1,6 @@
 require('dotenv').config();
 const WebSocket = require('ws');
+const botState = require('./utils/botState');
 const fetch     = require('node-fetch');
 
 const { handleMessage }  = require('./handlers/commandHandler');
@@ -43,9 +44,11 @@ const api = {
     getMessages:         (channelId, params)            => { const q = new URLSearchParams(params).toString(); return api.get(`/channels/${channelId}/messages?${q}`); },
     deleteMessage:       (channelId, messageId)        => api.delete(`/channels/${channelId}/messages/${messageId}`),
     bulkDeleteMessages:  (channelId, body)             => api.post(`/channels/${channelId}/messages/bulk-delete`, body),
+    editPermissions:     (channelId, overwriteId, body) => api.put(`/channels/${channelId}/permissions/${overwriteId}`, body),
   },
   guilds: {
     get:          (guildId)              => api.get(`/guilds/${guildId}`),
+    getChannels:  (guildId)              => api.get(`/guilds/${guildId}/channels`),
     getMember:    (guildId, userId)       => api.get(`/guilds/${guildId}/members/${userId}`),
     getRoles:     (guildId)               => api.get(`/guilds/${guildId}/roles`),
     banUser:      (guildId, userId, body) => api.put(`/guilds/${guildId}/bans/${userId}`, body),
@@ -69,6 +72,8 @@ let ws, heartbeatInterval, sessionId, resumeUrl, sequence = null;
 let botUser      = null;
 let reconnecting = false;
 const guildRegistry = new Map(); // guildId -> { id, name, ownerId, memberCount }
+botState.setGuildRegistry(guildRegistry);
+let botReadyAt = null; // timestamp cand botul a devenit ready — pentru a filtra GUILD_CREATE la startup
 let retryDelay   = 3000;
 
 // Intents: GUILDS(1) + GUILD_MEMBERS(2) + GUILD_MESSAGES(512) + MESSAGE_CONTENT(32768) + GUILD_MODERATION(4)
@@ -101,7 +106,7 @@ function identify() {
 function startHeartbeat(interval) {
   clearInterval(heartbeatInterval);
   heartbeatInterval = setInterval(() => {
-    if (ws?.readyState === WebSocket.OPEN) send(1, sequence);
+    if (ws?.readyState === WebSocket.OPEN) { botState.setHeartbeatSend(); send(1, sequence); }
   }, interval);
 }
 
@@ -109,10 +114,13 @@ async function dispatch(event, data) {
   try {
     if (event === 'READY') {
       botUser    = data.user;
+      botState.setBotUser(data.user);
       sessionId  = data.session_id;
       resumeUrl  = data.resume_gateway_url || 'wss://gateway.fluxer.app';
       retryDelay = 3000; // reset delay dupa succes
       intentIndex = intentIndex; // pastreaza intentul care a mers
+      // Marcheaza startup — GUILD_CREATE in primele 10s sunt servere existente, nu noi
+      setTimeout(() => { botReadyAt = Date.now(); }, 10000);
       console.log('\n╔══════════════════════════════════════════╗');
       console.log(`║  FluxGuard — Online ✅                  ║`);
       console.log(`║  Bot: @${(botUser.username || '?').padEnd(33)}║`);
@@ -127,25 +135,59 @@ async function dispatch(event, data) {
     }
 
     else if (event === 'GUILD_CREATE') {
-      if (data.id && data.owner_id) {
-        setOwner(data.id, data.owner_id);
-        guildRegistry.set(String(data.id), {
-          id:       String(data.id),
-          name:     data.name     || 'Unknown',
-          ownerId:  String(data.owner_id),
-          memberCount: data.member_count || 0,
+      if (data.id) {
+        const gId = String(data.id);
+        const isNew = !guildRegistry.has(gId);
+
+        // Fetch datele reale din API — Fluxer nu le trimite in event
+        let guildName    = data.name        || null;
+        let guildOwnerId = data.owner_id    || null;
+        let guildMembers = data.member_count || 0;
+        let guildPerms   = data.permissions  || null;
+        // Salveaza canalele din GUILD_CREATE in cache
+        if (Array.isArray(data.channels) && data.channels.length > 0) {
+          botState.setGuildChannels(gId, data.channels.map(c => ({
+            id: String(c.id), type: c.type, permission_overwrites: c.permission_overwrites || [],
+          })));
+        }
+        try {
+          const fetched = await api.guilds.get(gId);
+          if (fetched?.id) {
+            guildName    = fetched.name         || guildName;
+            guildOwnerId = fetched.owner_id     || guildOwnerId;
+            guildMembers = fetched.member_count || guildMembers;
+          }
+          // Fallback — incearca si din fetched
+          if (Array.isArray(fetched?.channels) && fetched.channels.length > 0 && botState.getGuildChannels(gId).length === 0) {
+            botState.setGuildChannels(gId, fetched.channels.map(c => ({
+              id: String(c.id), type: c.type, permission_overwrites: c.permission_overwrites || [],
+            })));
+          }
+        } catch (_) {}
+
+        if (guildOwnerId) setOwner(gId, guildOwnerId);
+        guildRegistry.set(gId, {
+          id:          gId,
+          name:        guildName    || 'Unknown',
+          ownerId:     String(guildOwnerId || ''),
+          memberCount: guildMembers || 0,
+          permissions: guildPerms,
         });
-        // Skip notification for own support server
-        if (String(data.id) !== '1480245027074822289') {
-          await sendNetworkLog(api, 'join', data, null, guildRegistry.size).catch(() => {});
+
+        if (isNew && gId !== '1480245027074822289' && botReadyAt !== null) {
+          await sendNetworkLog(api, 'join', { id: gId, permissions: guildPerms }, guildRegistry.get(gId), guildRegistry.size).catch(() => {});
         }
       }
     }
     else if (event === 'GUILD_DELETE') {
-      const cached = guildRegistry.get(String(data.id));
-      if (data.id) guildRegistry.delete(String(data.id));
-      if (String(data.id) !== '1480245027074822289') {
-        await sendNetworkLog(api, 'leave', data, cached, guildRegistry.size).catch(() => {});
+      const gId = String(data.id);
+      // unavailable=true = server offline temporar, nu bot scos — ignora
+      if (data.unavailable === true) return;
+      // Folosim datele din registry salvate la GUILD_CREATE (inainte sa pierdem accesul)
+      const cached = guildRegistry.get(gId);
+      guildRegistry.delete(gId);
+      if (gId !== '1480245027074822289') {
+        await sendNetworkLog(api, 'leave', { id: gId }, cached, guildRegistry.size).catch(() => {});
       }
     }
 
@@ -165,6 +207,35 @@ async function dispatch(event, data) {
       }
       // Lockdown — kick orice user nou
       await handleAntiRaid(api, guildId, data);
+    }
+
+    // Mentine channel cache up-to-date
+    else if (event === 'CHANNEL_CREATE') {
+      const gId = data.guild_id;
+      if (gId) {
+        const chs = botState.getGuildChannels(gId);
+        if (!chs.find(c => c.id === String(data.id))) {
+          chs.push({ id: String(data.id), type: data.type, permission_overwrites: data.permission_overwrites || [] });
+          botState.setGuildChannels(gId, chs);
+        }
+      }
+    }
+    else if (event === 'CHANNEL_UPDATE') {
+      const gId = data.guild_id;
+      if (gId) {
+        const chs = botState.getGuildChannels(gId);
+        const idx = chs.findIndex(c => c.id === String(data.id));
+        if (idx !== -1) chs[idx] = { id: String(data.id), type: data.type, permission_overwrites: data.permission_overwrites || [] };
+        else chs.push({ id: String(data.id), type: data.type, permission_overwrites: data.permission_overwrites || [] });
+        botState.setGuildChannels(gId, chs);
+      }
+    }
+    else if (event === 'CHANNEL_DELETE') {
+      const gId = data.guild_id;
+      if (gId) {
+        const chs = botState.getGuildChannels(gId).filter(c => c.id !== String(data.id));
+        botState.setGuildChannels(gId, chs);
+      }
     }
 
     else if (['CHANNEL_DELETE','GUILD_ROLE_DELETE'].includes(event)) {
@@ -196,29 +267,38 @@ async function sendNetworkLog(api, type, data, cached = null, serverCount = 0) {
   const emoji   = isJoin ? '➕' : '➖';
   const title   = isJoin ? 'New Server Added FluxGuard' : 'Server Removed FluxGuard';
 
-  const guildId   = String(data.id || '');
-  const guildName = data.name || cached?.name || 'Unknown';
-  const ownerId   = data.owner_id || cached?.ownerId || null;
-  const members   = data.member_count || cached?.memberCount || 0;
+  const guildId = String(data.id || cached?.id || '');
 
-  // Compute permissions string
+  // Datele vin din registry (salvate la GUILD_CREATE cu fetch)
+  const guildName = cached?.name        || data.name         || 'Unknown';
+  const ownerId   = cached?.ownerId     || data.owner_id     || null;
+  const members   = cached?.memberCount || data.member_count || 0;
+
+  // Compute permissions string — fetch din /users/@me/guilds care include permissions
   let permsInfo = 'Unknown';
-  if (isJoin && data.permissions) {
-    const bits = BigInt(data.permissions);
-    const permsMap = [
-      [8n,           'Administrator'],
-      [4n,           'Ban Members'],
-      [2n,           'Kick Members'],
-      [32n,          'Manage Guild'],
-      [8192n,        'Manage Messages'],
-      [16n,          'Manage Channels'],
-      [268435456n,   'Manage Roles'],
-      [1024n,        'View Channels'],
-      [2048n,        'Send Messages'],
-      [1073741824n,  'Use Application Commands'],
-    ];
-    const active = permsMap.filter(([bit]) => (bits & bit) === bit).map(([, name]) => name);
-    permsInfo = active.length ? active.join(', ') : 'No notable permissions';
+  if (isJoin && guildId) {
+    try {
+      const myGuilds = await api.users.getGuilds();
+      const myGuild  = Array.isArray(myGuilds) ? myGuilds.find(g => String(g.id) === guildId) : null;
+      const permsRaw = myGuild?.permissions || cached?.permissions || data.permissions || null;
+      if (permsRaw) {
+        const bits = BigInt(permsRaw);
+        const permsMap = [
+          [8n,           'Administrator'],
+          [4n,           'Ban Members'],
+          [2n,           'Kick Members'],
+          [32n,          'Manage Guild'],
+          [8192n,        'Manage Messages'],
+          [16n,          'Manage Channels'],
+          [268435456n,   'Manage Roles'],
+          [1024n,        'View Channels'],
+          [2048n,        'Send Messages'],
+          [1073741824n,  'Use Application Commands'],
+        ];
+        const active = permsMap.filter(([bit]) => (bits & bit) === bit).map(([, name]) => name);
+        permsInfo = active.length ? active.join(', ') : 'No notable permissions';
+      }
+    } catch (_) {}
   }
 
   // Try to get invite link
@@ -283,7 +363,7 @@ function connect() {
       identify();
       console.log(`[GW] Hello — heartbeat every ${d.heartbeat_interval}ms`);
     }
-    else if (op === 11) {}     // Heartbeat ACK
+    else if (op === 11) { botState.setHeartbeatAck(); }     // Heartbeat ACK
     else if (op === 0) {       // DISPATCH
       await dispatch(t, d);
     }
@@ -326,7 +406,5 @@ function connect() {
 process.on('unhandledRejection', err => console.error('[UNHANDLED]', err?.message || err));
 connect();
 
-function getBotUser() { return botUser; }
-function getGuildRegistry() { return guildRegistry; }
-module.exports = { getBotUser, getGuildRegistry };
+module.exports = {};
 
