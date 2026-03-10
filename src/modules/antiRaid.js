@@ -1,7 +1,8 @@
 const { getSettings, createCase, isWhitelisted } = require('../utils/db');
 const { sendLog }    = require('../utils/logger');
-const { alertEmbed } = require('../utils/embeds');
+const { alertEmbed, sendAlertPing } = require('../utils/embeds');
 const { isPrivileged } = require('../utils/isPrivileged');
+const { executeLockdown } = require('../commands/security');
 
 const tracker = new Map();
 
@@ -25,17 +26,37 @@ async function handleAntiRaid(api, guildId, member) {
     console.log(`[ANTIRAID] 🚨 ${recent.length} joins in ${cfg.antiraid_interval / 1000}s — action: ${cfg.antiraid_action}`);
     tracker.set(guildId, []);
 
+    const s = await getSettings(guildId);
+    const trigger = `${recent.length} joins in ${cfg.antiraid_interval / 1000}s`;
+
+    // ALERT
     if (cfg.antiraid_action === 'alert') {
-      const s = await getSettings(guildId);
       if (s.log_channel) {
         await api.channels.createMessage(s.log_channel, alertEmbed('ANTIRAID',
           `**${recent.length}** users joined in **${cfg.antiraid_interval / 1000}s** — possible raid detected.`,
-          { 'Users': recent.map(j => `\`${j.userId}\``).join(', ').slice(0, 900), 'Threshold': `${cfg.antiraid_threshold} joins / ${cfg.antiraid_interval / 1000}s` }
+          { 'Users': recent.map(j => `\`${j.userId}\``).join(', ').slice(0, 900), 'Threshold': `${cfg.antiraid_threshold} joins / ${cfg.antiraid_interval / 1000}s` },
+          'alert'
+        )).catch(() => {});
+      }
+      await sendAlertPing(api, guildId, 'ANTIRAID');
+      return;
+    }
+
+    // LOCKDOWN — nu ban/kick, doar lockdown
+    if (cfg.antiraid_action === 'lockdown') {
+      const reason = `[AntiRaid] Mass join detected — ${trigger}`;
+      const locked = await executeLockdown(api, guildId, reason, 'FluxGuard').catch(() => 0);
+      if (s.log_channel) {
+        await api.channels.createMessage(s.log_channel, alertEmbed('ANTIRAID',
+          `Raid detected — server locked down automatically.`,
+          { 'Trigger': trigger, 'Channels Locked': String(locked), 'Action': 'LOCKDOWN' },
+          'lockdown'
         )).catch(() => {});
       }
       return;
     }
 
+    // BAN / KICK
     for (const { userId } of recent) {
       if (await isWhitelisted(guildId, userId)) continue;
       if (await isPrivileged(api, guildId, userId, [])) continue;
@@ -48,7 +69,7 @@ async function handleAntiRaid(api, guildId, member) {
           await api.channels.createMessage(dm.id, { content: `🛡️ **Automated Action: ${cfg.antiraid_action.toUpperCase()}** in **${raidGuildName}**\nReason: ${reason}` });
         } catch (_) {}
         if (cfg.antiraid_action === 'ban') await api.guilds.banUser(guildId, userId, { reason });
-        else await api.guilds.removeMember(guildId, userId);
+        else if (cfg.antiraid_action === 'kick') await api.guilds.removeMember(guildId, userId);
         const entry = await createCase(guildId, { action: cfg.antiraid_action.toUpperCase(), userId, userTag: userId, modId: 'bot', modTag: 'FluxGuard', reason, auto: true });
         await sendLog(api, guildId, 'ANTIRAID', { 'User': userId, 'Action': cfg.antiraid_action.toUpperCase(), 'Trigger': `${recent.length} joins / ${cfg.antiraid_interval / 1000}s`, 'Case': entry.caseId }, entry);
       } catch (err) { console.error('[ANTIRAID]', err.message); }
