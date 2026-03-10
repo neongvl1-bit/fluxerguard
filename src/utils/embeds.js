@@ -67,10 +67,33 @@ function securityAlert(module, description, fieldsObj, caseEntry) {
 }
 
 // ── Alert only ────────────────────────────────────────────────────────────────
-function alertEmbed(module, description, fieldsObj) {
-  const fields = Object.entries(fieldsObj).map(([k, v]) => field(k, v, true));
-  fields.push(field('⚠️ Action', '**None taken** — alert only mode. Moderators should review.', false));
-  return embed(COLORS.WARNING, `${ICONS[module] || '🛡️'}  ${module} Alert — Action Required`, description, fields);
+function alertEmbed(module, description, fieldsObj, action = 'alert') {
+  const act = (action || 'alert').toLowerCase();
+
+  const colorMap = {
+    ban:      0xE74C3C,  // rosu
+    kick:     0xE67E22,  // portocaliu
+    timeout:  0xF1C40F,  // galben
+    untimeout:0x2ECC71,  // verde
+    unban:    0x2ECC71,  // verde
+    alert:    0x3498DB,  // albastru
+  };
+  const titleMap = {
+    ban:      `${ICONS[module] || '🛡️'}  ${module} — User Banned`,
+    kick:     `${ICONS[module] || '🛡️'}  ${module} — User Kicked`,
+    timeout:  `${ICONS[module] || '🛡️'}  ${module} — User Timed Out`,
+    untimeout:`${ICONS[module] || '🛡️'}  ${module} — Timeout Removed`,
+    unban:    `${ICONS[module] || '🛡️'}  ${module} — User Unbanned`,
+    alert:    `${ICONS[module] || '🛡️'}  ${module} — Alert`,
+  };
+
+  const color = colorMap[act] ?? COLORS.WARNING;
+  const title = titleMap[act] ?? `${ICONS[module] || '🛡️'}  ${module} — Action Taken`;
+
+  const fields = Object.entries(fieldsObj).map(([k, v]) => field(k, String(v ?? ''), true));
+  if (act === 'alert') fields.push(field('⚠️ Note', '**No action taken** — alert only mode. Moderators should review.', false));
+
+  return embed(color, title, description, fields);
 }
 
 // ── Generic ───────────────────────────────────────────────────────────────────
@@ -121,7 +144,7 @@ function configEmbed(g) {
       field('🛡️ AntiRaid',
         `*Detects mass join attacks and kicks/bans all of them automatically.*\n` +
         `Enabled: **${g.antiraid_enabled}** | Trigger: **${g.antiraid_threshold}** joins in **${g.antiraid_interval/1000}s** | Action: **${g.antiraid_action}**\n` +
-        `*Actions: \`kick\` \`ban\` \`alert\`*`, false),
+        `*Actions: \`kick\` \`ban\` \`lockdown\` \`alert\`*`, false),
       field('💥 AntiNuke',
         `-# ⚠️ This setting affects critical server protection. Modify with caution.\n` +
         `*Protects against mass channel/role deletion — bans the executor automatically.*\n` +
@@ -129,7 +152,8 @@ function configEmbed(g) {
         `*Actions: \`ban\` \`alert\`*`, false),
       field('⚠️ AntiSpam',
         `*Prevents message flooding — punishes users who send too many messages fast.*\n` +
-        `Enabled: **${g.antispam_enabled}** | Trigger: **${g.antispam_max_msgs}** msgs in **${g.antispam_interval/1000}s** | Action: **${g.antispam_action}**\n` +
+        `Enabled: **${g.antispam_enabled}** | Trigger: **${g.antispam_max_msgs}** msgs in **${g.antispam_interval/1000}s** | Action: **${g.antispam_action}**` +
+        (g.antispam_action === 'timeout' ? ` | Timeout: **${Math.round((g.antispam_timeout_ms||300000)/60000)}m**` : '') + `\n` +
         `*Actions: \`timeout\` \`kick\` \`ban\` \`alert\`*`, false),
       field('🌊 AntiFlood',
         `*Stops repeated identical messages from flooding channels.*\n` +
@@ -185,6 +209,9 @@ function helpEmbed(prefix, category) {
       field('📌 Quick Tips',
         `• \`${p}config\` — configure all auto-protection\n• \`${p}guardian\` — server security score\n• \`${p}setlog\` — enable action logging`,
         false),
+      field('🤖 Bot',
+        `\`${p}botinfo\` — bot stats & uptime\n\`${p}ping\` — check latency`,
+        false),
       field('\u200b',
         `[➕ Add FluxGuard to your server](https://web.fluxer.app/oauth2/authorize?client_id=1479261972163135794&scope=bot&permissions=15763699713353790)\n[💬 Join our community](https://fluxer.gg/0mLkdw2i)`,
         false),
@@ -234,14 +261,17 @@ function threatLogEmbed(stats) {
 }
 
 // ── Lockdown ──────────────────────────────────────────────────────────────────
-function lockdownEmbed(active, reason, mod) {
+function lockdownEmbed(active, reason, mod, channelCount = 0) {
+  const fields = active
+    ? [field('Activated by', mod, true), field('Channels Locked', String(channelCount), true), field('Reason', reason, false)]
+    : [field('Lifted by', mod, true), field('Channels Restored', String(channelCount), true)];
   return embed(
     active ? 0xED4245 : 0x43B581,
     active ? '🔒  Server Lockdown — ACTIVE' : '🔓  Server Lockdown — Lifted',
     active
-      ? `This server is under **lockdown**.\nReason: ${reason}`
-      : `Lockdown lifted by **${mod}**. Server is back to normal.`,
-    active ? [field('Activated by', mod, true), field('Reason', reason, false)] : []
+      ? `This server is under **lockdown**. @everyone can no longer send messages or add reactions.\nReason: ${reason}`
+      : `Lockdown lifted by **${mod}**. Permissions have been restored to their original state.`,
+    fields
   );
 }
 
@@ -266,12 +296,27 @@ function notesListEmbed(userId, notes) {
   ]);
 }
 
+// ── Alert Ping Helper ─────────────────────────────────────────────────────────
+// Trimite ping-ul rolurilor configurate in log channel cand e alert mode
+async function sendAlertPing(api, guildId, module) {
+  const { getSettings } = require('../utils/db');
+  const s = await getSettings(guildId);
+  if (!s.log_channel) return;
+  if (s.alert_ping_enabled === false) return;
+  const roles = Array.isArray(s.alert_roles) ? s.alert_roles : [];
+  if (!roles.length) return;
+  const mention = roles.map(r => `<@&${r}>`).join(' ');
+  await api.channels.createMessage(s.log_channel, {
+    content: `${mention} ⚠️ **${module} Alert** — manual review required.`,
+  }).catch(() => {});
+}
+
 module.exports = {
   COLORS, ICONS, field,
   modConfirm, modDM, logEntry, securityAlert, alertEmbed,
   error, success, info,
   warnConfirm, caseEmbed, caseHistory,
   configEmbed, helpEmbed, listEmbed,
-  guardianLevelEmbed, threatLogEmbed, lockdownEmbed,
+  guardianLevelEmbed, threatLogEmbed, lockdownEmbed, sendAlertPing,
   noteEmbed, notesListEmbed,
 };
