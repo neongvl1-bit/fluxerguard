@@ -1,4 +1,5 @@
-const { getSettings, updateSettings, getThreatStats, addNote, getNotes, deleteNote } = require('../utils/db');
+const { getSettings, updateSettings, getThreatStats, addNote, getNotes, deleteNote, saveLockdownSnapshot, getLockdownSnapshot, clearLockdownSnapshot } = require('../utils/db');
+const { getGuildChannels } = require('../utils/botState');
 const E = require('../utils/embeds');
 
 function resolveId(i) { return i ? i.replace(/[<#@!&>]/g, '') : null; }
@@ -91,6 +92,54 @@ const threatlog = { name: 'threatlog', names: ['threatlog', 'threats', 'stats'],
 };
 
 // ── LOCKDOWN ──────────────────────────────────────────────────────────────────
+// Helper: executa lockdown pe un server (folosit si de antiRaid)
+async function executeLockdown(api, guildId, reason, modTag) {
+  const SEND_MESSAGES = 2048;
+  const ADD_REACTIONS = 64;
+  const DENY_BITS     = SEND_MESSAGES | ADD_REACTIONS;
+
+  // 1. Ia toate canalele text din cache (gateway) — /guilds/{id}/channels returneaza [] pe Fluxer
+  const cached = getGuildChannels(guildId);
+  console.log(`[LOCKDOWN] channel cache size=${cached.length} for guild=${guildId}`);
+  const textChannels = cached.filter(c => c.type === 0 || c.type === 5 || c.type == null);
+
+  // 2. Gaseste @everyone role ID (are acelasi ID ca guildId)
+  const everyoneId = guildId;
+
+  // 3. Construieste snapshot din cache (sync, fara await)
+  const snapshot = textChannels.map(ch => {
+    const existing = (ch.permission_overwrites || []).find(o => o.id === everyoneId);
+    return {
+      channel_id: ch.id,
+      allow: existing ? String(existing.allow || '0') : '0',
+      deny:  existing ? String(existing.deny  || '0') : '0',
+    };
+  });
+
+  // 4. Totul in paralel — snapshot save + permission updates + settings update simultan
+  const permRequests = textChannels.map(ch => {
+    const existing     = (ch.permission_overwrites || []).find(o => o.id === everyoneId);
+    const currentAllow = BigInt(existing?.allow || '0');
+    const currentDeny  = BigInt(existing?.deny  || '0');
+    const newAllow = currentAllow & ~BigInt(DENY_BITS);
+    const newDeny  = currentDeny  |  BigInt(DENY_BITS);
+    return api.channels.editPermissions(ch.id, everyoneId, {
+      allow: String(newAllow),
+      deny:  String(newDeny),
+      type:  0,
+    });
+  });
+
+  const [results] = await Promise.all([
+    Promise.allSettled(permRequests),
+    saveLockdownSnapshot(guildId, snapshot),
+    updateSettings(guildId, { lockdown_enabled: true, lockdown_reason: reason, lockdown_mod: modTag }),
+  ]);
+  const locked = results.filter(r => r.status === 'fulfilled').length;
+  console.log(`[LOCKDOWN] Activated in ${guildId} — ${locked} channels locked`);
+  return locked;
+}
+
 const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adminOnly: true,
   async execute({ api, args, guildId, channelId, author, message }) {
     const mid = message?.id;
@@ -98,11 +147,15 @@ const lockdown = { name: 'lockdown', names: ['lockdown'], permissions: true, adm
     if (g.lockdown_enabled) return send(api, channelId, mid,
       E.error('Already Active', 'Server is already in lockdown. Use `!unlockdown` to lift it.'));
     const reason = args.join(' ') || 'Emergency lockdown';
-    await updateSettings(guildId, { lockdown_enabled: true, lockdown_reason: reason, lockdown_mod: author.username });
-    const updated = await getSettings(guildId);
-    if (updated.log_channel) api.channels.createMessage(updated.log_channel, E.lockdownEmbed(true, reason, author.username)).catch(() => {});
-    console.log(`[LOCKDOWN] Activated in ${guildId} by ${author.username}`);
-    return send(api, channelId, mid, E.lockdownEmbed(true, reason, author.username));
+    // Numarul de canale il stim din cache — fara await
+    const channelCount = getGuildChannels(guildId).filter(c => c.type === 0 || c.type === 5 || c.type == null).length;
+    // Trimite mesajul IMEDIAT cu numarul real, operatiile ruleaza in background
+    send(api, channelId, mid, E.lockdownEmbed(true, reason, author.username, channelCount)).catch(() => {});
+    executeLockdown(api, guildId, reason, author.username).then(locked => {
+      getSettings(guildId).then(s => {
+        if (s.log_channel) api.channels.createMessage(s.log_channel, E.lockdownEmbed(true, reason, author.username, locked)).catch(() => {});
+      });
+    }).catch(() => {});
   }
 };
 
@@ -112,11 +165,28 @@ const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: tru
     const g = await getSettings(guildId);
     if (!g.lockdown_enabled) return send(api, channelId, mid,
       E.error('Not Active', 'Server is not currently in lockdown.'));
-    await updateSettings(guildId, { lockdown_enabled: false, lockdown_reason: null, lockdown_mod: null });
-    const updated = await getSettings(guildId);
-    if (updated.log_channel) api.channels.createMessage(updated.log_channel, E.lockdownEmbed(false, '', author.username)).catch(() => {});
-    console.log(`[LOCKDOWN] Lifted in ${guildId} by ${author.username}`);
-    return send(api, channelId, mid, E.lockdownEmbed(false, '', author.username));
+    const everyoneId = guildId;
+    const snapshot   = await getLockdownSnapshot(guildId);
+    // Trimite mesajul IMEDIAT cu numarul real din snapshot, operatiile ruleaza in background
+    send(api, channelId, mid, E.lockdownEmbed(false, '', author.username, snapshot.length)).catch(() => {});
+
+    // Totul in paralel — restore permissions + clear snapshot + update settings simultan
+    const [restoreResults] = await Promise.all([
+      Promise.allSettled(
+        snapshot.map(snap => api.channels.editPermissions(snap.channel_id, everyoneId, {
+          allow: String(snap.allow || '0'),
+          deny:  String(snap.deny  || '0'),
+          type:  0,
+        }))
+      ),
+      clearLockdownSnapshot(guildId),
+      updateSettings(guildId, { lockdown_enabled: false, lockdown_reason: null, lockdown_mod: null }),
+    ]);
+    const unlocked = restoreResults.filter(r => r.status === 'fulfilled').length;
+    console.log(`[LOCKDOWN] Lifted in ${guildId} by ${author.username} — ${unlocked} channels restored`);
+    getSettings(guildId).then(s => {
+      if (s.log_channel) api.channels.createMessage(s.log_channel, E.lockdownEmbed(false, '', author.username, unlocked)).catch(() => {});
+    }).catch(() => {});
   }
 };
 
@@ -290,3 +360,4 @@ const lookup = { name: 'lookup', names: ['lookup', 'whois'], permissions: true,
 
 module.exports = guardian;
 module.exports.extra = [threatlog, lockdown, unlockdown, note, lookup];
+module.exports.executeLockdown = executeLockdown;
