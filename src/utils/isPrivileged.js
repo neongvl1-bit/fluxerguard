@@ -1,6 +1,6 @@
 const { rolesCache } = require('./cache');
 
-const PRIVILEGED_BITS = [8n, 4n, 2n, 32n, 32768n, 16n, 8192n];
+const PRIVILEGED_BITS = [8n, 4n, 2n, 32n, 8192n, 268435456n]; // Admin, Ban, Kick, Manage Guild, Manage Messages, Manage Roles
 
 // Owner cache
 const ownerIds = new Map();
@@ -56,20 +56,22 @@ async function isPrivileged(api, guildId, userId, memberRoleIds) {
   if (ownerIds.get(gId) === uId) return true;
 
   try {
-    // 2. Fetch member — Fluxer poate returna permissions direct pe member object
     const member = await api.guilds.getMember(gId, uId).catch(() => null);
-
-    // 2a. Daca member are permissions field direct (computed permissions)
-    if (member?.permissions) {
-      return hasPrivilegeBits(member.permissions);
-    }
-
-    // 2b. Fallback — verifica prin rolurile din event sau de pe member
     const roleIds = member?.roles?.length ? member.roles : (memberRoleIds || []);
-    if (roleIds.length) {
-      const allRoles = await getGuildRoles(api, gId);
-      if (allRoles.length) return hasPrivilege(roleIds, allRoles);
+    const allRoles = await getGuildRoles(api, gId);
+
+    // Debug — arata rolurile userului si permisiunile lor
+    console.log(`[PRIV DEBUG] user=${uId} roleIds=${JSON.stringify(roleIds)}`);
+    for (const role of allRoles) {
+      if (roleIds.map(String).includes(String(role.id))) {
+        console.log(`[PRIV DEBUG]   role=${role.name} (${role.id}) perms=${role.permissions}`);
+      }
     }
+    // Include si @everyone (id = guildId)
+    const everyone = allRoles.find(r => String(r.id) === gId);
+    if (everyone) console.log(`[PRIV DEBUG]   @everyone perms=${everyone.permissions}`);
+
+    if (roleIds.length && allRoles.length) return hasPrivilege(roleIds, allRoles);
   } catch (_) {}
 
   return false;
