@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { getSettings, updateSettings, addWhitelist, removeWhitelist, getWhitelist, addBlacklist, removeBlacklist, getBlacklist } = require('../utils/db');
 const E = require('../utils/embeds');
+const { getBotUser, getGuildRegistry, getBotStartTime, getGatewayPing } = require('../utils/botState');
 
 function resolveId(i) { return i ? i.replace(/[<#@!&>]/g, '') : null; }
 
@@ -175,6 +176,73 @@ const help = { name: 'help', names: ['help'],
 
 
 
+// ── PING ─────────────────────────────────────────────────────────────────────
+const ping = { name: 'ping', names: ['ping'], permissions: false,
+  async execute({ api, channelId, message }) {
+    const gateway = getGatewayPing();
+    const before  = Date.now();
+    const sent    = await api.channels.createMessage(channelId, { content: '🏓 measuring...' }).catch(() => null);
+    const roundtrip = Date.now() - before;
+
+    const desc = [
+      '**Roundtrip** — time to send a message to Fluxer and get a response',
+      '`' + roundtrip + 'ms`',
+      '',
+      '**Gateway** — latency between bot and Fluxer WebSocket (last heartbeat)',
+      '`' + (gateway >= 0 ? gateway + 'ms' : 'measuring...') + '`',
+    ].join('\n');
+
+    await send(api, channelId, message?.id, E.info('🏓 Pong!', desc));
+    if (sent?.id) api.channels.deleteMessage(channelId, sent.id).catch(() => {});
+  }
+};
+
+// ── BOTINFO ───────────────────────────────────────────────────────────────────
+function formatUptime(ms) {
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  return `${m}m ${sec}s`;
+}
+
+const botinfo = { name: 'botinfo', names: ['botinfo', 'info'], permissions: false,
+  async execute({ api, channelId, message }) {
+    const mid     = message?.id;
+    const bot     = getBotUser();
+    const reg     = getGuildRegistry();
+    const uptime  = formatUptime(Date.now() - getBotStartTime());
+    const gateway = getGatewayPing();
+    const version = require('../../package.json').version || '1.0.0';
+
+    // Conta membri totali din registry
+    let totalMembers = 0;
+    for (const g of reg.values()) totalMembers += (g.memberCount || 0);
+
+    const embed = {
+      embeds: [{
+        color: 0x00c8ff,
+        title: '🛡️  FluxGuard',
+        description: 'A powerful security & moderation bot for Fluxer.',
+        fields: [
+          { name: '🤖 Bot',        value: '<@1479261972163135794>',               inline: true },
+          { name: '📦 Version',    value: `v${version}`,                           inline: true },
+          { name: '⏱️ Uptime',     value: uptime,                                  inline: true },
+          { name: '🌐 Servers',    value: String(reg.size),                        inline: true },
+          { name: '👥 Users',      value: totalMembers.toLocaleString(),           inline: true },
+          { name: '📡 Gateway',    value: gateway >= 0 ? `${gateway}ms` : 'measuring...', inline: true },
+        ],
+        footer: { text: 'FluxGuard • fluxer.gg/0mLkdw2i' },
+        timestamp: new Date().toISOString(),
+      }],
+    };
+    await send(api, channelId, mid, embed);
+  }
+};
+
 module.exports = setprefix;
 module.exports.extra = [setlog, whitelist, blacklist, config, help];
 
@@ -251,4 +319,80 @@ const servers = { name: 'servers', names: ['servers', 'serverlist'], ownerOnly: 
   }
 };
 
+// ── ALERTROLE ─────────────────────────────────────────────────────────────────
+const alertrole = { name: 'alertrole', names: ['alertrole'], permissions: true,
+  async execute({ api, args, guildId, channelId, message }) {
+    const mid = message?.id;
+    const sub = (args[0] || '').toLowerCase();
+    const g   = await getSettings(guildId);
+    const roles = Array.isArray(g.alert_roles) ? g.alert_roles : [];
+
+    if (sub === 'on') {
+      await updateSettings(guildId, { alert_ping_enabled: true });
+      return send(api, channelId, mid, {
+        embeds: [{ color: 0x2ECC71, title: '🔔  Alert Ping — Enabled',
+          description: `Alert role pings are now **enabled**. Configured roles will be pinged whenever a module fires in alert mode.
+
+${roles.length ? roles.map(r => `<@&${r}>`).join(' ') : '*No roles configured yet — use `!alertrole add @role`*'}` }]
+      });
+    }
+
+    if (sub === 'off') {
+      await updateSettings(guildId, { alert_ping_enabled: false });
+      return send(api, channelId, mid, {
+        embeds: [{ color: 0xE74C3C, title: '🔕  Alert Ping — Disabled',
+          description: 'Alert role pings are now **disabled**. Modules will still log to the log channel, but no roles will be pinged.' }]
+      });
+    }
+
+    if (sub === 'add') {
+      const newRoles = args.slice(1).map(a => a.replace(/[<@&>]/g, '')).filter(Boolean);
+      if (!newRoles.length) return send(api, channelId, mid,
+        { embeds: [{ color: 0xE74C3C, title: '❌ No roles specified', description: 'Usage: `!alertrole add @role1 @role2`' }] });
+      const updated = [...new Set([...roles, ...newRoles])];
+      await updateSettings(guildId, { alert_roles: updated });
+      return send(api, channelId, mid, {
+        embeds: [{ color: 0x2ECC71, title: '✅  Alert Roles Updated',
+          description: `Added **${newRoles.length}** role(s) to the alert ping list.
+
+**Current roles:** ${updated.map(r => `<@&${r}>`).join(' ')}`,
+          footer: { text: `${updated.length} role(s) total` } }]
+      });
+    }
+
+    if (sub === 'remove') {
+      const toRemove = args.slice(1).map(a => a.replace(/[<@&>]/g, '')).filter(Boolean);
+      if (!toRemove.length) return send(api, channelId, mid,
+        { embeds: [{ color: 0xE74C3C, title: '❌ No roles specified', description: 'Usage: `!alertrole remove @role1 @role2`' }] });
+      const updated = roles.filter(r => !toRemove.includes(r));
+      await updateSettings(guildId, { alert_roles: updated });
+      return send(api, channelId, mid, {
+        embeds: [{ color: 0xF1C40F, title: '🗑️  Alert Roles Updated',
+          description: `Removed **${toRemove.length}** role(s) from the alert ping list.
+
+${updated.length ? `**Current roles:** ${updated.map(r => `<@&${r}>`).join(' ')}` : '*No roles remaining.*'}`,
+          footer: { text: `${updated.length} role(s) remaining` } }]
+      });
+    }
+
+    // Default — afiseaza status
+    const pingEnabled = g.alert_ping_enabled !== false;
+    return send(api, channelId, mid, {
+      embeds: [{ color: 0x00c8ff, title: '🔔  Alert Role Configuration',
+        description: `Manage which roles get pinged when a module fires in **alert mode**.`,
+        fields: [
+          { name: '📡 Status',       value: pingEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
+          { name: '👥 Roles',        value: roles.length ? roles.map(r => `<@&${r}>`).join(' ') : '*None configured*', inline: true },
+          { name: '📋 Commands',
+            value: '`!alertrole add @role` — add a role\n`!alertrole remove @role` — remove a role\n`!alertrole on` — enable pings\n`!alertrole off` — disable pings',
+            inline: false },
+        ],
+        footer: { text: 'Roles are pinged in the log channel when a module is set to alert mode' } }]
+    });
+  }
+};
+
 module.exports.extra.push(servers);
+module.exports.extra.push(botinfo);
+module.exports.extra.push(ping);
+module.exports.extra.push(alertrole);
