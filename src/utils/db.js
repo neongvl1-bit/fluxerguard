@@ -14,6 +14,7 @@ const DEFAULT = () => ({
   antinuke_enabled:  true,  antinuke_threshold: 3,  antinuke_interval: 10000, antinuke_action: 'ban',
   antispam_enabled:  true,  antispam_max_msgs:  8,  antispam_interval: 5000,  antispam_action: 'timeout', antispam_timeout_ms: 300000,
   antiflood_enabled: true,  antiflood_duplicates: 4,
+  alert_roles:       [],    alert_ping_enabled: true,
 });
 
 const caseCounters = new Map();
@@ -191,6 +192,24 @@ async function deleteNote(guildId, noteId) {
   return data;
 }
 
+// ── LOCKDOWN SNAPSHOTS ────────────────────────────────────────────────────────
+// Salveaza permisiunile @everyone per canal inainte de lockdown
+async function saveLockdownSnapshot(guildId, snapshot) {
+  // snapshot = [{ channel_id, allow, deny }]
+  await supabase.from('lockdown_snapshots').delete().eq('guild_id', guildId);
+  if (!snapshot.length) return;
+  await supabase.from('lockdown_snapshots').insert(
+    snapshot.map(s => ({ guild_id: guildId, channel_id: s.channel_id, allow: s.allow, deny: s.deny }))
+  );
+}
+async function getLockdownSnapshot(guildId) {
+  const { data } = await supabase.from('lockdown_snapshots').select('*').eq('guild_id', guildId);
+  return data || [];
+}
+async function clearLockdownSnapshot(guildId) {
+  await supabase.from('lockdown_snapshots').delete().eq('guild_id', guildId);
+}
+
 module.exports = {
   getSettings, updateSettings,
   createCase, getCaseById, getCasesByUser, deleteCase,
@@ -198,4 +217,5 @@ module.exports = {
   isBlacklisted, addBlacklist, removeBlacklist, getBlacklist,
   incrementStat, getThreatStats,
   addNote, getNotes, deleteNote,
+  saveLockdownSnapshot, getLockdownSnapshot, clearLockdownSnapshot,
 };
