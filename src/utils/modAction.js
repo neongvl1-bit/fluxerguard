@@ -1,4 +1,4 @@
-const { createCase }        = require('./db');
+const { createCase, incrementStat } = require('./db');
 const { sendLog }           = require('./logger');
 const { modConfirm, modDM } = require('./embeds');
 
@@ -69,6 +69,8 @@ async function doModAction({ api, guildId, channelId, modUser, action, targetUse
     modId: modUser.id, modTag: modUser.username,
     reason, duration, auto: false,
   });
+  const statMap = { BAN: 'bans', KICK: 'kicks', WARN: 'warns', TIMEOUT: 'timeouts', UNBAN: null, UNTIMEOUT: null };
+  if (statMap[action]) incrementStat(guildId, statMap[action]);
 
   // Fetch guild name for DM
   let guildName = 'the server';
