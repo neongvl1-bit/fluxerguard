@@ -1,5 +1,5 @@
 const { doModAction }                             = require('../utils/modAction');
-const { createCase, getCasesByUser, getCaseById, deleteCase } = require('../utils/db');
+const { createCase, getCasesByUser, getCaseById, deleteCase, getSettings, incrementStat } = require('../utils/db');
 const { sendLog }                                 = require('../utils/logger');
 const { parseDuration, formatMs }                 = require('../utils/duration');
 const E = require('../utils/embeds');
@@ -247,47 +247,89 @@ module.exports.extra = [kick, warn, unban, timeout, untimeout, caseCmd, delwarn]
 const clear = { name: 'clear', names: ['clear', 'purge'], permissions: true,
   async execute({ api, args, guildId, channelId, author, message }) {
     const mid = message?.id;
+    const g   = await getSettings(guildId);
+    const p   = g.prefix || 'fg!';
 
     const amount = parseInt(args[0]);
     if (!args[0] || isNaN(amount) || amount < 1 || amount > 100)
       return send(api, channelId, mid,
-        E.error('Invalid Amount', 'Usage: `!clear <1-100>`\nExample: `!clear 10`\nYou can delete between **1** and **100** messages at once.'));
+        E.error('Invalid Amount', `Usage: \`${p}clear <1-100>\`\nExample: \`${p}clear 10\`\nYou can delete between **1** and **100** messages at once.`));
 
-    // Fetch messages
-    let messages;
-    try {
-      const fetchLimit = Math.min(amount + 1, 100);
-      messages = await api.channels.getMessages(channelId, { limit: fetchLimit });
-    } catch (err) {
-      return send(api, channelId, mid,
-        E.error('Failed to Fetch', `Could not fetch messages: ${err.message}`));
-    }
-
-    if (!Array.isArray(messages) || messages.length === 0)
-      return send(api, channelId, mid,
-        E.error('No Messages', 'No messages found to delete.'));
-
-    // Exclude comanda proprie daca e in lista
-    const toDelete = messages
-      .filter(m => m.id !== mid)
-      .slice(0, amount)
-      .map(m => m.id);
-
-    if (toDelete.length === 0)
-      return send(api, channelId, mid,
-        E.error('No Messages', 'No messages found to delete.'));
-
-    // Delete toate mesajele in paralel simultan
-    const results = await Promise.allSettled(
-      toDelete.map(msgId => api.channels.deleteMessage(channelId, msgId))
-    );
-    const deleted = results.filter(r => r.status === 'fulfilled').length;
-
-    // Sterge si comanda originala
+    // Sterge comanda proprie imediat
     if (mid) api.channels.deleteMessage(channelId, mid).catch(() => {});
 
+    // Colecteaza ID-urile mesajelor prin paginare
+    // limit=25 per request — conservator, sigur pe Fluxer
+    const FETCH_SIZE = 25;
+    const collected  = [];
+    let before       = mid || null; // porneste de dinainte de comanda proprie
+
+    while (collected.length < amount) {
+      const params = { limit: FETCH_SIZE };
+      if (before) params.before = before;
+
+      let batch;
+      try { batch = await api.channels.getMessages(channelId, params); }
+      catch (_) { break; }
+
+      if (!Array.isArray(batch) || batch.length === 0) break;
+
+      for (const m of batch) {
+        if (m.id === mid) continue;
+        collected.push(m.id);
+        if (collected.length >= amount) break;
+      }
+
+      if (batch.length < FETCH_SIZE) break;
+      before = batch[batch.length - 1].id;
+    }
+
+    if (collected.length === 0)
+      return send(api, channelId, null, E.error('No Messages', 'No messages found to delete.'));
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    let deleted = 0;
+
+    // Incearca bulk delete intai — instant daca Fluxer il suporta
+    let remaining = [...collected];
+    if (remaining.length > 1) {
+      try {
+        await api.channels.bulkDeleteMessages(channelId, { messages: remaining });
+        deleted = remaining.length;
+        remaining = []; // tot a fost sters
+      } catch (_) {
+        // Bulk nu merge — fallback complet la individual
+      }
+    }
+
+    // Delete individual pentru ce a ramas (bulk picat sau 1 mesaj)
+    // Batch-uri de 5 cu 250ms pauza — evita rate limit Fluxer
+    if (remaining.length > 0) {
+      const BATCH = 5;
+      for (let i = 0; i < remaining.length; i += BATCH) {
+        const chunk = remaining.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          chunk.map(id => api.channels.deleteMessage(channelId, id))
+        );
+        const chunkDeleted = results.filter(r => r.status === 'fulfilled').length;
+        deleted += chunkDeleted;
+
+        // Retry pentru cele care au esuat din chunk
+        const failed = chunk.filter((_, idx) => results[idx].status === 'rejected');
+        if (failed.length > 0) {
+          await sleep(500);
+          const retries = await Promise.allSettled(
+            failed.map(id => api.channels.deleteMessage(channelId, id))
+          );
+          deleted += retries.filter(r => r.status === 'fulfilled').length;
+        }
+
+        if (i + BATCH < remaining.length) await sleep(250);
+      }
+    }
+
     // Confirmare temporara (dispare dupa 4s)
-    const confirm = await send(api, channelId,
+    const confirm = await send(api, channelId, null,
       E.success('Messages Cleared', `Successfully deleted **${deleted}** message${deleted !== 1 ? 's' : ''} in this channel.\n*Cleared by ${author.username}*`));
     if (confirm?.id) {
       setTimeout(() => api.channels.deleteMessage(channelId, confirm.id).catch(() => {}), 4000);
