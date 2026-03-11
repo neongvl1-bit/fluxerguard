@@ -27,37 +27,6 @@ function isOwner(userId) {
   return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).filter(Boolean).includes(userId);
 }
 
-// Calculeaza permisiunile unui user din rolurile sale
-async function getPermBits(api, guildId, memberRoles) {
-  try {
-    const rolesData = await api.get(`/guilds/${guildId}/roles`);
-    const allRoles  = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
-    const myRoleIds = new Set((memberRoles || []).map(String));
-    let perms = 0n;
-    for (const role of allRoles) {
-      if (String(role.id) === String(guildId) || myRoleIds.has(String(role.id))) {
-        try { perms |= BigInt(role.permissions || '0'); } catch (_) {}
-      }
-    }
-    return perms;
-  } catch (_) { return 0n; }
-}
-
-// Returneaza "puterea" unui user: suma pozitiilor rolurilor sale (mai mare = mai puternic)
-async function getRolePower(api, guildId, memberRoles) {
-  try {
-    const rolesData = await api.guilds.getRoles(guildId);
-    const allRoles  = Array.isArray(rolesData) ? rolesData : [];
-    const myRoleIds = new Set((memberRoles || []).map(String));
-    let power = 0;
-    for (const role of allRoles) {
-      if (myRoleIds.has(String(role.id))) {
-        power = Math.max(power, role.position || 0);
-      }
-    }
-    return power;
-  } catch (_) { return 0; }
-}
 
 const ALLOWED_BITS = [
   8n, 4n, 2n, 32n, 268435456n, 8192n, 16n,
@@ -73,39 +42,122 @@ function checkBits(permsStr) {
   return false;
 }
 
+// Helper: calculeaza permisiuni din roleIds + allRoles array
+function calcPerms(roleIds, allRoles, guildId) {
+  const myIds = new Set((roleIds || []).map(String));
+  let perms = 0n;
+  for (const role of (allRoles || [])) {
+    if (String(role.id) === String(guildId) || myIds.has(String(role.id))) {
+      try { perms |= BigInt(role.permissions || '0'); } catch (_) {}
+    }
+  }
+  return perms;
+}
+
 async function memberHasPermission(api, guildId, message) {
   const userId = String(message.author?.id || '');
   const member = message.member;
+  const gId    = String(guildId);
 
-  // 1. Bot owner — acces total
+  const { ownerCache: ownerMap } = require('../utils/isPrivileged');
+  const { rolesCache }           = require('../utils/cache');
+
+  // ── PAS 1: Bot owner ──────────────────────────────────────────────────────
+  // Local check din .env — nu poate esua niciodata
   if (isOwner(userId)) return true;
 
-  // 2. Server owner — fetch guild
-  try {
-    const guild = await api.guilds.get(guildId);
-    if (guild?.owner_id && String(guild.owner_id) === userId) return true;
-  } catch (e) { console.error('[PERMS] guild fetch error:', e.message); }
+  // ── PAS 2: Server owner din cache ─────────────────────────────────────────
+  // ownerMap e populat la GUILD_CREATE prin setOwner() — zero API calls
+  // Daca nu e in cache (bot era offline la adaugare pe server), incearca guild fetch
+  const cachedOwner = ownerMap?.get(gId);
+  if (cachedOwner) {
+    if (String(cachedOwner) === userId) return true;
+  } else {
+    try {
+      const guild = await api.guilds.get(gId);
+      if (guild?.owner_id) {
+        ownerMap?.set(gId, String(guild.owner_id));
+        if (String(guild.owner_id) === userId) return true;
+      }
+    } catch (_) {}
+  }
 
-  // 3. permissions pe member din MESSAGE_CREATE payload (cel mai rapid)
+  // ── PAS 3: member.permissions din event ───────────────────────────────────
+  // Fluxer uneori include permisiunile calculate in payload-ul MESSAGE_CREATE
+  // Cel mai rapid — zero API calls, un singur BigInt check
   if (member?.permissions != null) {
     if (checkBits(String(member.permissions))) return true;
   }
 
-  // 4. Fetch member fresh
-  try {
-    const freshMember = await api.guilds.getMember(guildId, userId);
-
-    if (freshMember?.permissions != null) {
-      if (checkBits(String(freshMember.permissions))) return true;
+  // ── PAS 4: Roluri din event + rolesCache ──────────────────────────────────
+  // member.roles vine din MESSAGE_CREATE si e mereu actualizat (rolul userului azi)
+  // rolesCache e populat la GUILD_CREATE — stim permisiunile fiecarui rol
+  // Zero API calls. Esueaza doar daca cache e gol (bot offline la adaugare)
+  const eventRoles = member?.roles || [];
+  if (eventRoles.length) {
+    const cachedRoles = rolesCache.get(gId);
+    if (cachedRoles?.length) {
+      const perms = calcPerms(eventRoles, cachedRoles, gId);
+      if (checkBits(String(perms))) return true;
     }
+  }
 
-    // 5. Calculeaza din roluri (fallback daca getRoles merge pe Fluxer)
-    const roleIds = freshMember?.roles || member?.roles || [];
-    if (roleIds.length) {
-      const perms = await getPermBits(api, guildId, roleIds);
+  // ── PAS 5: Roluri din event + getRoles fresh ──────────────────────────────
+  // rolesCache era gol — un singur API call pentru rolurile serverului
+  // Folosim rolurile din event pentru user (fara getMember)
+  // Populeaza cache-ul pentru request-urile urmatoare
+  if (eventRoles.length) {
+    try {
+      const freshRoles = await api.guilds.getRoles(gId);
+      const allRoles   = Array.isArray(freshRoles) ? freshRoles : [];
+      if (allRoles.length) {
+        rolesCache.set(gId, allRoles); // populeaza cache pentru viitor
+        const perms = calcPerms(eventRoles, allRoles, gId);
         if (checkBits(String(perms))) return true;
+      }
+    } catch (_) {}
+  }
+
+  // ── PAS 6: getMember fresh + rolesCache sau getRoles ─────────────────────
+  // Event nu a trimis member.roles deloc — facem getMember pentru rolurile userului
+  // Combinam cu cache (daca exista) sau cu un getRoles fresh (daca nu)
+  if (!eventRoles.length) {
+    try {
+      const freshMember = await api.guilds.getMember(gId, userId);
+      const memberRoles = freshMember?.roles || [];
+      if (memberRoles.length) {
+        let allRoles = rolesCache.get(gId) || [];
+        if (!allRoles.length) {
+          try {
+            const fetched = await api.guilds.getRoles(gId);
+            allRoles = Array.isArray(fetched) ? fetched : [];
+            if (allRoles.length) rolesCache.set(gId, allRoles);
+          } catch (_) {}
+        }
+        if (allRoles.length) {
+          const perms = calcPerms(memberRoles, allRoles, gId);
+          if (checkBits(String(perms))) return true;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ── PAS 7: Channel permission_overwrites ──────────────────────────────────
+  // Toti pasii anteriori au esuat — Fluxer API nu functioneaza
+  // Fluxer trimite permission_overwrites la nivel de canal mai consistent decat guild perms
+  // Daca userul sau unul din rolurile sale are un overwrite explicit cu bits privilegiate,
+  // e aproape sigur un admin/mod care a primit acces explicit pe acel canal
+  try {
+    const channel    = await api.channels.get(message.channel_id);
+    const overwrites = channel?.permission_overwrites || [];
+    const ids        = new Set([...(eventRoles), userId].map(String));
+    for (const ow of overwrites) {
+      if (!ids.has(String(ow.id))) continue;
+      try {
+        if (checkBits(String(BigInt(ow.allow || '0')))) return true;
+      } catch (_) {}
     }
-  } catch (e) { console.error('[PERMS] getMember error:', e.message); }
+  } catch (_) {}
 
   return false;
 }
@@ -125,8 +177,8 @@ async function canTarget(api, guildId, authorMessage, targetId) {
   if (!targetMember) return { ok: true }; // daca nu e in server (ex: unban), permite
 
   // Nu poti actiona asupra owner-ului serverului
-  const { ownerCache } = require('../utils/cache');
-  const ownerId = ownerCache.get ? ownerCache.get(String(guildId)) : null;
+  const { ownerCache: ownerMap2 } = require('../utils/isPrivileged');
+  const ownerId = ownerMap2?.get(String(guildId));
   if (ownerId && String(ownerId) === String(targetId)) {
     return { ok: false, reason: "You can't use this command on the server owner." };
   }
@@ -144,9 +196,33 @@ async function handleMessage(api, message) {
   if (!message.guild_id || message.author?.bot) return;
 
   const settings = await getSettings(message.guild_id);
-  const prefix   = settings?.prefix || process.env.DEFAULT_PREFIX || '!';
+  const prefix   = settings?.prefix || process.env.DEFAULT_PREFIX || 'fg!';
+  const botId    = '1479261972163135794';
 
-  if (!message.content?.startsWith(prefix)) return;
+  // Mention handler — raspunde cand e mentionat botul
+  const mentionPrefix = `<@${botId}>`;
+  const mentionAlt    = `<@!${botId}>`;
+  const content       = message.content || '';
+  if (content.trim() === mentionPrefix || content.trim() === mentionAlt || content.trim() === `<@${botId}>`) {
+    await api.channels.replyMessage(message.channel_id, message.id, {
+      embeds: [{
+        color: 0x1F3A8E,
+        title: "👋  Hey there! I'm FluxGuard.",
+        description: "Your server's security and moderation bot, built exclusively for Fluxer.\n\nI'm here to keep your server safe 24/7 — automatically handling spam, raids, nukes, and anything in between.",
+        fields: [
+          { name: '⚙️ My prefix here', value: `\`${prefix}\``, inline: true },
+          { name: '🔧 Change it with', value: `\`${prefix}setprefix <new prefix>\``, inline: true },
+          { name: '📖 Get started', value: `\`${prefix}help\` — full command list\n\`${prefix}config\` — view all settings\n\`${prefix}guardian\` — server security score`, inline: false },
+          { name: '🌐 Community', value: '[Join our Fluxer server](https://fluxer.gg/0mLkdw2i)', inline: true },
+        ],
+        footer: { text: 'FluxGuard • Built for Fluxer' },
+        timestamp: new Date().toISOString(),
+      }]
+    }).catch(() => {});
+    return;
+  }
+
+  if (!content.startsWith(prefix)) return;
 
   const args    = message.content.slice(prefix.length).trim().split(/\s+/);
   const cmdName = args.shift().toLowerCase();
@@ -174,18 +250,19 @@ async function handleMessage(api, message) {
   }
 
   if (cmd.adminOnly && !isOwner(message.author.id)) {
-    // Verifica daca e server owner sau are Administrator
-    const isServerOwner = message.guild_id && message.member && message.author.id === (await api.guilds.get(message.guild_id).catch(() => ({}))).owner_id;
+    const { ownerCache: ownerMap3 } = require('../utils/isPrivileged');
+    const { rolesCache }            = require('../utils/cache');
+    const ownerId      = ownerMap3?.get(String(message.guild_id));
+    const isServerOwner = ownerId && String(ownerId) === String(message.author.id);
     let hasAdmin = false;
     try {
-      const rolesData = await api.get('/guilds/' + message.guild_id + '/roles');
-      const allRoles  = Array.isArray(rolesData) ? rolesData : (rolesData?.roles || []);
-      const myRoleIds = new Set((message.member?.roles || []).map(String));
-      for (const role of allRoles) {
-        if (String(role.id) === String(message.guild_id) || myRoleIds.has(String(role.id))) {
-          try { if ((BigInt(role.permissions || '0') & 8n) === 8n) { hasAdmin = true; break; } } catch (_) {}
-        }
-      }
+      const cached   = rolesCache.get(String(message.guild_id));
+      const allRoles = cached?.length
+        ? cached
+        : (() => { const r = api.guilds.getRoles(message.guild_id).catch(() => []); return r; })();
+      const resolved = Array.isArray(allRoles) ? allRoles : await Promise.resolve(allRoles);
+      const perms = calcPerms(message.member?.roles || [], Array.isArray(resolved) ? resolved : [], message.guild_id);
+      hasAdmin = (perms & 8n) === 8n;
     } catch (_) {}
     if (!isServerOwner && !hasAdmin) {
       await api.channels.replyMessage(message.channel_id, message.id, {
@@ -195,9 +272,31 @@ async function handleMessage(api, message) {
     }
   }
 
+  let replied = false;
+
+  // Wrapper pe replyMessage si createMessage ca sa stim daca s-a trimis deja ceva
+  const trackedApi = new Proxy(api, {
+    get(target, prop) {
+      if (prop === 'channels') {
+        return new Proxy(target.channels, {
+          get(ch, method) {
+            if (method === 'replyMessage' || method === 'createMessage') {
+              return (...args) => {
+                replied = true;
+                return ch[method](...args);
+              };
+            }
+            return ch[method];
+          }
+        });
+      }
+      return target[prop];
+    }
+  });
+
   try {
     await cmd.execute({
-      api,
+      api: trackedApi,
       message,
       args,
       guildId:   message.guild_id,
@@ -207,9 +306,12 @@ async function handleMessage(api, message) {
     });
   } catch (err) {
     console.error(`[CMD ERROR] ${cmdName}:`, err.message);
-    await api.channels.replyMessage(message.channel_id, message.id, {
-      content: `❌ Error: ${err.message}`
-    }).catch(() => {});
+    // Trimite eroarea doar daca comanda nu a trimis deja un raspuns
+    if (!replied) {
+      await api.channels.replyMessage(message.channel_id, message.id, {
+        content: `❌ Error: ${err.message}`
+      }).catch(() => {});
+    }
   }
 }
 
