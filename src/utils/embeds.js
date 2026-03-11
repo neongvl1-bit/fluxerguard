@@ -159,61 +159,128 @@ function configEmbed(g) {
         `*Stops repeated identical messages from flooding channels.*\n` +
         `Enabled: **${g.antiflood_enabled}** | Trigger: **${g.antiflood_duplicates}** identical messages | Action: *(shares AntiSpam action)*`, false),
       field('🛡️ Guardian Level', 'Run `!guardian` to see your server security score (0–5).\nIt checks which modules are active and gives tips to improve protection.', false),
-      field('⚙️ How to change', '`!config <module> <key> <value>`\nExample: `!config antiraid action ban`\nRun `!guardian` after changes to see the updated security level.', false),
+      field('⚙️ How to change',
+        `**Enable/Disable a module:**\n\`${g.prefix}config <module> enable\` or \`${g.prefix}config <module> disable\`\n` +
+        `**Change a setting:**\n\`${g.prefix}config <module> <key> <value>\`\n` +
+        `**Examples:**\n\`${g.prefix}config antispam disable\` — turn off AntiSpam\n\`${g.prefix}config antiraid action ban\` — set AntiRaid action to ban\n\`${g.prefix}config antinuke threshold 5\` — set AntiNuke threshold\n` +
+        `Run \`${g.prefix}guardian\` after changes to see the updated security level.`, false),
     ]
   );
 }
 
 // ── Help ──────────────────────────────────────────────────────────────────────
 function helpEmbed(prefix, category) {
-  const p = prefix || '!';
+  const p = prefix || 'fg!';
 
   if (category) {
     const cats = {
       moderation: {
         icon: '🔨', title: 'Moderation Commands',
         fields: [
-          field('Ban / Kick / Unban', `\`${p}ban <@user|ID> [reason]\`\n\`${p}kick <@user|ID> [reason]\`\n\`${p}unban <userID> [reason]\``, false),
-          field('Warn / Timeout', `\`${p}warn <@user|ID> <reason>\`\n\`${p}timeout <@user|ID> <duration> [reason]\`\n\`${p}untimeout <@user|ID> [reason]\``, false),
-          field('Cases', `\`${p}case <ID>\`\n\`${p}case history <@user|ID>\``, false),
+          field('🔨 Ban / Kick / Unban',
+            `\`${p}ban <@user|ID> [reason]\` — permanently ban a user\n` +
+            `\`${p}kick <@user|ID> [reason]\` — remove a user from the server\n` +
+            `\`${p}unban <userID> [reason]\` — remove a ban`,
+            false),
+          field('⚠️ Warn / Delete Warning',
+            `\`${p}warn <@user|ID> <reason>\` — issue a warning\n` +
+            `\`${p}delwarn <@user|ID> <caseID>\` — delete a specific warning\n` +
+            `*Use \`${p}case history @user\` to find case IDs*`,
+            false),
+          field('⏱️ Timeout / Untimeout',
+            `\`${p}timeout <@user|ID> <duration> [reason]\` — mute a user\n` +
+            `\`${p}untimeout <@user|ID> [reason]\` — remove timeout\n` +
+            `*Aliases: \`${p}mute\` / \`${p}unmute\`*`,
+            false),
+          field('📋 Cases',
+            `\`${p}case <ID>\` — look up a specific case\n` +
+            `\`${p}case history <@user|ID>\` — view all cases for a user`,
+            false),
+          field('🧹 Clear / Purge',
+            `\`${p}clear <1-100>\` — delete messages in the current channel\n` +
+            `*Alias: \`${p}purge\`*`,
+            false),
+          field('⏱️ Duration Format', '`30s`  `10m`  `2h`  `1d`  *(max 28d)*', false),
         ]
       },
       security: {
         icon: '🛡️', title: 'Security Commands',
         fields: [
-          field('Config & Lists', `\`${p}config\`\n\`${p}whitelist add/remove/list <@user|ID>\`\n\`${p}blacklist add/remove/list <@user|ID>\``, false),
-          field('Guardian Systems', `\`${p}guardian\` — security score\n\`${p}threatlog\` — weekly report\n\`${p}lockdown [reason]\`\n\`${p}unlockdown\``, false),
-          field('Mod Notes', `\`${p}note <@user|ID> <text>\`\n\`${p}note list <@user|ID>\`\n\`${p}note delete <noteID>\``, false),
-          field('Threat Intelligence', `\`${p}lookup <@user|ID>\` — full user report`, false),
+          field('⚙️ Config',
+            `\`${p}config\` — view all settings\n` +
+            `\`${p}config <module> enable/disable\` — turn a module on or off\n` +
+            `*Modules: \`antiraid\` · \`antinuke\` · \`antispam\` · \`antiflood\`*\n\n` +
+            `\`${p}config antiraid   action <kick|ban|lockdown|alert>  |  threshold <n>  |  interval <ms>\`\n` +
+            `\`${p}config antinuke   action <ban|alert>                |  threshold <n>  |  interval <ms>\`\n` +
+            `\`${p}config antispam   action <timeout|kick|ban|alert>   |  max <n>  |  timeout <ms>  |  publicmsg on/off\`\n` +
+            `\`${p}config antiflood  duplicates <n>\``,
+            false),
+          field('✅ Whitelist  ·  🚫 Blacklist',
+            `\`${p}whitelist add/remove/list <@user|ID|@role>\`\n` +
+            `\`${p}blacklist add/remove/list <@user|ID|@role>\`\n\n` +
+            `✅ **Whitelisted** → bypass all auto-protection\n` +
+            `🚫 **Blacklisted** → auto-banned on join\n` +
+            `*Aliases: \`${p}wl\` · \`${p}bl\`*`,
+            false),
+          field('🔒 Lockdown  ·  🔍 Intel  ·  📝 Notes  ·  🔔 Alerts',
+            `\`${p}lockdown [reason]\`  /  \`${p}unlockdown\`\n\n` +
+            `\`${p}guardian\` — security score\n` +
+            `\`${p}threatlog\` — weekly report  *(${p}threats · ${p}stats)*\n` +
+            `\`${p}lookup <@user|ID>\` — full user profile  *(${p}whois)*\n\n` +
+            `\`${p}note <@user|ID> <text>\` — add note\n` +
+            `\`${p}note list/delete <@user|ID|noteID>\`\n\n` +
+            `\`${p}alertrole add/remove @role\`\n` +
+            `\`${p}alertrole on/off\` — toggle alert pings`,
+            false),
         ]
       },
       setup: {
-        icon: '⚙️', title: 'Setup Commands',
+        icon: '⚙️', title: 'Setup & Admin Commands',
         fields: [
-          field('Bot Setup', `\`${p}setprefix <prefix>\`\n\`${p}setlog [#channel]\``, false),
+          field('🔧 Basic Setup',
+            `\`${p}setprefix <prefix>\` — change the command prefix\n` +
+            `\`${p}setlog [#channel]\` — set the log channel (leave blank to disable)`,
+            false),
+          field('📋 Config Overview',
+            `\`${p}config\` — view all current module settings at a glance\n` +
+            `\`${p}config <module> enable/disable\` — toggle a module on/off\n` +
+            `*Modules: \`antiraid\`, \`antinuke\`, \`antispam\`, \`antiflood\`*`,
+            false),
+          field('🤖 Bot Info',
+            `\`${p}botinfo\` — version, uptime, server count\n` +
+            `\`${p}ping\` — roundtrip & gateway latency`,
+            false),
           field('⏱️ Duration Format', '`30s`  `10m`  `2h`  `1d`  *(max 28d)*', false),
+          field('💡 Tip',
+            `Privileged users (Admins, Server Owner, users with Ban/Kick/Manage Server) bypass all auto-protection modules automatically.`,
+            false),
         ]
       }
     };
     const cat = cats[category.toLowerCase()];
-    if (!cat) return embed(COLORS.ERROR, '❌ Unknown Category', 'Valid: `moderation`, `security`, `setup`', []);
-    return embed(COLORS.INFO, `${cat.icon}  ${cat.title}`, `Use \`${p}help\` to return to the main menu.`, cat.fields);
+    if (!cat) return embed(COLORS.ERROR, '❌ Unknown Category',
+      `Valid categories: \`moderation\`, \`security\`, \`setup\`\nUsage: \`${p}help <category>\``, []);
+    return embed(COLORS.INFO, `${cat.icon}  ${cat.title}`,
+      `Use \`${p}help\` to return to the main menu.`, cat.fields);
   }
 
-  return embed(COLORS.INFO, '🛡️  FluxGuard',
-    'A powerful security & moderation bot.\nPick a category below:',
+  return embed(COLORS.INFO, '🛡️  FluxGuard — Help',
+    'A powerful security & moderation bot for Fluxer.\nChoose a category below for detailed commands:',
     [
-      field('🔨 Moderation', `\`${p}help moderation\``, true),
-      field('🛡️ Security',   `\`${p}help security\``,   true),
-      field('⚙️ Setup',      `\`${p}help setup\``,      true),
-      field('📌 Quick Tips',
-        `• \`${p}config\` — configure all auto-protection\n• \`${p}guardian\` — server security score\n• \`${p}setlog\` — enable action logging`,
+      field('🔨 Moderation', `\`${p}help moderation\`\nban, kick, warn, timeout, clear, cases…`, true),
+      field('🛡️ Security',   `\`${p}help security\`\nconfig, whitelist, blacklist, lockdown…`, true),
+      field('⚙️ Setup',      `\`${p}help setup\`\nprefix, log channel, bot info…`, true),
+      field('📌 Quick Start',
+        `**1.** \`${p}setlog #channel\` — enable logging\n` +
+        `**2.** \`${p}config\` — review protection settings\n` +
+        `**3.** \`${p}whitelist add @user\` — exempt trusted users\n` +
+        `**4.** \`${p}guardian\` — check your security score`,
         false),
       field('🤖 Bot',
-        `\`${p}botinfo\` — bot stats & uptime\n\`${p}ping\` — check latency`,
+        `\`${p}botinfo\` — stats & uptime  •  \`${p}ping\` — latency`,
         false),
       field('\u200b',
-        `[➕ Add FluxGuard to your server](https://web.fluxer.app/oauth2/authorize?client_id=1479261972163135794&scope=bot&permissions=15763699713353790)\n[💬 Join our community](https://fluxer.gg/0mLkdw2i)`,
+        `[➕ Add FluxGuard](https://web.fluxer.app/oauth2/authorize?client_id=1479261972163135794&scope=bot&permissions=15763699713353790)  •  [💬 Support Server](https://fluxer.gg/0mLkdw2i)`,
         false),
     ]
   );
@@ -244,9 +311,25 @@ function guardianLevelEmbed(level, score, details) {
 }
 
 // ── Threat Log ────────────────────────────────────────────────────────────────
+function getWeekDateRange(weekStr) {
+  // weekStr format: "2026-W11"
+  const [year, w] = weekStr.split('-W');
+  const weekNum = parseInt(w);
+  // ISO 8601: week 1 is the week containing the first Thursday of the year
+  // Monday of week N = Jan 4 of that year + (N-1)*7 days, adjusted to Monday
+  const jan4 = new Date(parseInt(year), 0, 4);
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (weekNum - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(monday)} – ${fmt(sunday)}`;
+}
+
 function threatLogEmbed(stats) {
   const total = (stats.bans||0)+(stats.kicks||0)+(stats.warns||0)+(stats.timeouts||0)+(stats.raids||0)+(stats.nukes||0)+(stats.spams||0);
-  return embed(COLORS.INFO, `📊  Threat Report — ${stats.week}`,
+  const range = getWeekDateRange(stats.week);
+  return embed(COLORS.INFO, `📊  Threat Report — ${stats.week}  (${range})`,
     `**${total}** total threats handled this week`,
     [
       field('🔨 Bans',     String(stats.bans     || 0), true),
