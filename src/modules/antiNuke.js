@@ -1,4 +1,5 @@
-const { getSettings, createCase, isWhitelisted } = require('../utils/db');
+const { getSettings, createCase, isWhitelisted, isRoleWhitelisted, incrementStat } = require('../utils/db');
+const { getCachedMemberRoles } = require('../utils/botState');
 const { sendLog }    = require('../utils/logger');
 const { alertEmbed, sendAlertPing } = require('../utils/embeds');
 const { isPrivileged } = require('../utils/isPrivileged');
@@ -9,10 +10,21 @@ async function handleAntiNuke(api, guildId, eventName, executorId) {
   const cfg = await getSettings(guildId);
   if (!cfg.antinuke_enabled || !executorId) return;
   if (await isWhitelisted(guildId, executorId)) return;
-  if (await isPrivileged(api, guildId, executorId, [])) {
-    console.log('[ANTINUKE] Bypass —', executorId, 'is privileged');
-    return;
+
+  // Verifica role whitelist — cache intai, fallback getMember
+  let executorRoles = getCachedMemberRoles(guildId, executorId);
+  if (!executorRoles) {
+    try {
+      const member = await api.guilds.getMember(guildId, executorId);
+      executorRoles = member?.roles || [];
+    } catch (_) { executorRoles = []; }
   }
+  for (const roleId of executorRoles) {
+    if (await isRoleWhitelisted(guildId, roleId)) return;
+  }
+
+  // skipFetch=true — avem deja executorRoles din cache/getMember mai sus
+  if (await isPrivileged(api, guildId, executorId, executorRoles, true)) return;
 
   const key = `${guildId}:${executorId}`, now = Date.now();
   if (!tracker.has(key)) tracker.set(key, []);
@@ -26,14 +38,14 @@ async function handleAntiNuke(api, guildId, eventName, executorId) {
     const action = cfg.antinuke_action || 'ban';
 
     if (action === 'alert') {
-      const s = await getSettings(guildId);
-      if (s.log_channel) {
-        await api.channels.createMessage(s.log_channel, alertEmbed('ANTINUKE',
+      if (cfg.log_channel) {
+        await api.channels.createMessage(cfg.log_channel, alertEmbed('ANTINUKE',
           `User \`${executorId}\` performed **${recent.length}** destructive actions in **${cfg.antinuke_interval / 1000}s**.`,
           { 'User': `\`${executorId}\``, 'Actions': recent.map(a => a.event).join(', '), 'Threshold': `${cfg.antinuke_threshold} actions / ${cfg.antinuke_interval / 1000}s` },
           'alert'
         )).catch(() => {});
       }
+      incrementStat(guildId, 'nukes');
       await sendAlertPing(api, guildId, 'ANTINUKE');
       return;
     }
@@ -48,6 +60,7 @@ async function handleAntiNuke(api, guildId, eventName, executorId) {
       } catch (_) {}
       await api.guilds.banUser(guildId, executorId, { reason });
       const entry = await createCase(guildId, { action: 'BAN', userId: executorId, userTag: executorId, modId: 'bot', modTag: 'FluxGuard', reason, auto: true });
+      incrementStat(guildId, 'nukes');
       await sendLog(api, guildId, 'ANTINUKE', { 'User': executorId, 'Actions': `${recent.length}x in ${cfg.antinuke_interval / 1000}s`, 'Trigger': recent.map(a => a.event).join(', '), 'Case': entry.caseId }, entry);
     } catch (err) { console.error('[ANTINUKE]', err.message); }
   }
