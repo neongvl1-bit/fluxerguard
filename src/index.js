@@ -1,13 +1,14 @@
 require('dotenv').config();
 const WebSocket = require('ws');
-const botState = require('./utils/botState');
-const fetch     = require('node-fetch');
+const botState  = require('./utils/botState');
+const fetch      = require('node-fetch');
+const presence   = require('./utils/presence');
 
 const { handleMessage }  = require('./handlers/commandHandler');
 const { handleAntiRaid } = require('./modules/antiRaid');
 const { handleAntiNuke } = require('./modules/antiNuke');
 const { handleAntiSpam } = require('./modules/antiSpam');
-const { isBlacklisted, createCase, getSettings } = require('./utils/db');
+const { isBlacklisted, isRoleBlacklisted, createCase, getSettings, purgeGuildData } = require('./utils/db');
 const { setOwner, preloadRoles } = require('./utils/isPrivileged');
 const { rolesCache }  = require('./utils/cache');
 const { sendLog } = require('./utils/logger');
@@ -117,10 +118,14 @@ async function dispatch(event, data) {
       botState.setBotUser(data.user);
       sessionId  = data.session_id;
       resumeUrl  = data.resume_gateway_url || 'wss://gateway.fluxer.app';
-      retryDelay = 3000; // reset delay dupa succes
+      retryDelay = 3000; // reset backoff dupa conectare cu succes
       intentIndex = intentIndex; // pastreaza intentul care a mers
       // Marcheaza startup — GUILD_CREATE in primele 10s sunt servere existente, nu noi
       setTimeout(() => { botReadyAt = Date.now(); }, 10000);
+      // Initializeaza presence — seteaza status online cu activity
+      presence.init(ws, send);
+      presence.updatePresence(`FluxGuard | ${process.env.DEFAULT_PREFIX || 'fg!'}help`);
+
       console.log('\n╔══════════════════════════════════════════╗');
       console.log(`║  FluxGuard — Online ✅                  ║`);
       console.log(`║  Bot: @${(botUser.username || '?').padEnd(33)}║`);
@@ -130,8 +135,19 @@ async function dispatch(event, data) {
 
     else if (event === 'MESSAGE_CREATE') {
       if (!data.guild_id || data.author?.bot) return;
+      // Cache member roles pentru antiNuke bypass
+      if (data.author?.id && data.member?.roles) {
+        botState.cacheMember?.(data.guild_id, data.author.id, data.member.roles);
+      }
       await handleAntiSpam(api, data.guild_id, data);
       await handleMessage(api, data);
+    }
+
+    else if (event === 'GUILD_MEMBER_UPDATE') {
+      const guildId = data.guild_id, userId = data.user?.id;
+      if (guildId && userId && data.roles) {
+        botState.cacheMember?.(guildId, userId, data.roles);
+      }
     }
 
     else if (event === 'GUILD_CREATE') {
@@ -175,6 +191,39 @@ async function dispatch(event, data) {
         });
 
         if (isNew && gId !== '1480245027074822289' && botReadyAt !== null) {
+          // Welcome message — trimis in primul canal text disponibil
+          const prefix = 'fg!';
+          const welcomeEmbed = {
+            embeds: [{
+              color: 0x1F3A8E,
+              title: '🛡️  Thanks for adding FluxGuard!',
+              description: "Your server is now protected by FluxGuard — real-time security against spam, raids, and server nukes, with a full moderation toolkit for your staff.\n\nHere's everything you need to get started 👇",
+              fields: [
+                { name: '⚙️ Default Prefix',  value: `\`${prefix}\``,                                                                                                                             inline: true  },
+                { name: '🔧 Change it with',  value: `\`${prefix}setprefix <new prefix>\``,                                                                                                       inline: true  },
+                { name: '📋 First steps',     value: `\`${prefix}setlog #channel\` — set your log channel\n\`${prefix}config\` — view all settings\n\`${prefix}guardian\` — run a security audit`, inline: false },
+                { name: '🌐 Need help?',      value: '[Join our Fluxer community](https://fluxer.gg/0mLkdw2i)',                                                                                    inline: false },
+              ],
+              footer: { text: 'FluxGuard • Built for Fluxer' },
+              timestamp: new Date().toISOString(),
+            }]
+          };
+
+          // Incearca system channel intai, fallback la primul canal text
+          const chans = botState.getGuildChannels(gId);
+          const systemChannelId = data.system_channel_id || null;
+          const textChans = chans.filter(c => c.type === 0).sort((a, b) => (a.position || 0) - (b.position || 0));
+          const targetChannel = systemChannelId || (textChans.length ? textChans[0].id : null);
+          if (targetChannel) {
+            await api.channels.createMessage(targetChannel, welcomeEmbed).catch(async () => {
+              // System channel a esuat — fallback la primul canal text
+              if (systemChannelId && textChans.length) {
+                await api.channels.createMessage(textChans[0].id, welcomeEmbed).catch(() => {});
+              }
+            });
+          }
+
+          // sendNetworkLog dupa toate fetchurile — date complete garantate
           await sendNetworkLog(api, 'join', { id: gId, permissions: guildPerms }, guildRegistry.get(gId), guildRegistry.size).catch(() => {});
         }
       }
@@ -188,13 +237,22 @@ async function dispatch(event, data) {
       guildRegistry.delete(gId);
       if (gId !== '1480245027074822289') {
         await sendNetworkLog(api, 'leave', { id: gId }, cached, guildRegistry.size).catch(() => {});
+        await purgeGuildData(gId).catch(() => {});
       }
     }
 
     else if (event === 'GUILD_MEMBER_ADD') {
       const guildId = data.guild_id, userId = data.user?.id;
       if (!guildId || !userId) return;
-      if (await isBlacklisted(guildId, userId)) {
+      // Verifica blacklist user + blacklist role
+      const memberJoinRoles = data.roles || [];
+      let isBlacklistedEntry = await isBlacklisted(guildId, userId);
+      if (!isBlacklistedEntry) {
+        for (const roleId of memberJoinRoles) {
+          if (await isRoleBlacklisted(guildId, roleId)) { isBlacklistedEntry = true; break; }
+        }
+      }
+      if (isBlacklistedEntry) {
         const reason = '[Blacklist] Auto-banned on join';
         try {
           const dm = await api.users.createDM(userId);
@@ -339,9 +397,12 @@ async function sendNetworkLog(api, type, data, cached = null, serverCount = 0) {
   await api.channels.createMessage(NETWORK_LOG_CHANNEL, embed);
 }
 
+let manualClose = false; // previne double reconnect cand inchidem intentionat
+
 function connect() {
   if (reconnecting) return;
   reconnecting = true;
+  manualClose  = false;
 
   const url = 'wss://gateway.fluxer.app/?v=1&encoding=json';
   console.log(`[GW] Connecting... (attempt with intents=${INTENTS[intentIndex % INTENTS.length]})`);
@@ -359,26 +420,33 @@ function connect() {
     if (s !== null && s !== undefined) sequence = s;
 
     if (op === 10) {           // HELLO
+      console.log(`[GW] Hello — heartbeat every ${d.heartbeat_interval}ms`);
       startHeartbeat(d.heartbeat_interval);
       identify();
-      console.log(`[GW] Hello — heartbeat every ${d.heartbeat_interval}ms`);
     }
     else if (op === 11) { botState.setHeartbeatAck(); }     // Heartbeat ACK
     else if (op === 0) {       // DISPATCH
       await dispatch(t, d);
     }
     else if (op === 9) {       // Invalid Session
-      console.log(`[GW] Invalid session (d=${d}) — trying next intent set...`);
-      intentIndex++;
+      // d=false = sesiunea nu poate fi resumata (normal la pornire/restart) — re-identify cu acelasi intent
+      // d=true  = sesiunea poate fi resumata — trimite RESUME (neimplementat, reconecteaza)
+      if (d === false) {
+        console.log('[GW] Invalid session (cannot resume) — re-identifying...');
+      } else {
+        console.log('[GW] Invalid session (resumable) — reconnecting...');
+      }
       clearInterval(heartbeatInterval);
+      manualClose = true;
       ws.close();
-      // Asteapta inainte de reconectare (recomandat de protocol)
-      setTimeout(() => { reconnecting = false; connect(); }, retryDelay);
-      retryDelay = Math.min(retryDelay * 1.5, 30000);
+      const delay = 1000 + Math.random() * 4000; // 1-5s recomandat de protocol
+      setTimeout(() => { reconnecting = false; connect(); }, delay);
     }
     else if (op === 7) {       // Reconnect
       console.log('[GW] Server requested reconnect');
+      manualClose = true;
       ws.close();
+      setTimeout(() => { reconnecting = false; connect(); }, 1000);
     }
     else if (op !== 1) {
       console.log(`[GW] Unknown op=${op}`);
@@ -392,8 +460,13 @@ function connect() {
     if (code === 4004) { console.error('❌ Invalid token! Check FLUXER_BOT_TOKEN.'); process.exit(1); }
     if (code === 4013) { console.error('❌ Invalid intents! Gateway rejected our intents.'); }
     if (code === 4014) { console.error('❌ Disallowed intents! Need to enable them in bot settings.'); }
+    // Daca am inchis intentionat (op=9/op=7), nu mai reconectam din close handler
+    if (manualClose) { manualClose = false; return; }
     if (code !== 1000 && code !== 4004) {
+      // Backoff exponential — 3s, 6s, 12s, max 30s — evita bucla infinita
+      console.log(`[GW] Reconnecting in ${retryDelay}ms...`);
       setTimeout(() => { reconnecting = false; connect(); }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 30000);
     }
   });
 
