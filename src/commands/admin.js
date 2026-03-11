@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { getSettings, updateSettings, addWhitelist, removeWhitelist, getWhitelist, addBlacklist, removeBlacklist, getBlacklist } = require('../utils/db');
+const { getSettings, updateSettings, addWhitelist, removeWhitelist, getWhitelist, isRoleWhitelisted, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addBlacklist, removeBlacklist, getBlacklist, isRoleBlacklisted, addBlacklistRole, removeBlacklistRole, getBlacklistRoles } = require('../utils/db');
 const E = require('../utils/embeds');
 const { getBotUser, getGuildRegistry, getBotStartTime, getGatewayPing } = require('../utils/botState');
 
@@ -15,9 +15,10 @@ const send = (api, channelId, messageId, body) => {
 const setprefix = { name: 'setprefix', names: ['setprefix'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
     const mid = message?.id;
+    const g = await getSettings(guildId);
     const p = args[0];
     if (!p || p.length > 5) return send(api, channelId, mid,
-      E.error('Invalid Prefix', 'Prefix must be 1–5 characters.\nExample: `!setprefix ?`'));
+      E.error('Invalid Prefix', `Prefix must be 1–5 characters.\nExample: \`${g.prefix}setprefix ?\``));
     await updateSettings(guildId, { prefix: p });
     return send(api, channelId, mid, E.success('Prefix Updated', `Prefix set to \`${p}\``));
   }
@@ -27,39 +28,67 @@ const setprefix = { name: 'setprefix', names: ['setprefix'], permissions: true,
 const setlog = { name: 'setlog', names: ['setlog'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
     const mid = message?.id;
+    const g = await getSettings(guildId);
     if (!args[0]) {
       await updateSettings(guildId, { log_channel: null });
       return send(api, channelId, mid, E.success('Log Disabled', 'Log channel has been removed.'));
     }
     const id = resolveId(args[0]);
-    if (!id) return send(api, channelId, mid, E.error('Invalid Channel', 'Usage: `!setlog #channel` or `!setlog` to disable.'));
+    if (!id) return send(api, channelId, mid, E.error('Invalid Channel', `Usage: \`${g.prefix}setlog #channel\` or \`${g.prefix}setlog\` to disable.`));
     await updateSettings(guildId, { log_channel: id });
     return send(api, channelId, mid, E.success('Log Channel Set', `Logging to <#${id}>`));
   }
 };
 
 // ── WHITELIST ─────────────────────────────────────────────────────────────────
+// Detecteaza tipul argumentului: mentiune rol, mentiune user, sau ID numeric
+function parseTarget(raw) {
+  if (!raw) return null;
+  if (/^<@&\d+>$/.test(raw)) return { type: 'role', id: raw.replace(/\D/g, '') };
+  if (/^<@!?\d+>$/.test(raw)) return { type: 'user', id: raw.replace(/[<@!>]/g, '') };
+  if (/^\d{10,20}$/.test(raw)) return { type: 'user', id: raw };
+  return { type: 'invalid', id: null };
+}
+
 const whitelist = { name: 'whitelist', names: ['whitelist', 'wl'], permissions: true,
   async execute({ api, args, guildId, channelId, message }) {
     const mid = message?.id;
     const sub = (args[0] || '').toLowerCase();
+    const g = await getSettings(guildId);
+    const p = g.prefix || 'fg!';
+    const usage = `Usage: \`${p}whitelist add/remove/list <@user|ID|@role>\``;
+
     if (sub === 'add') {
-      const id = resolveId(args[1]);
-      if (!id) return send(api, channelId, mid, E.error('Missing User', 'Usage: `!whitelist add <@user|ID>`'));
-      await addWhitelist(guildId, id);
-      return send(api, channelId, mid, E.success('Whitelisted', `<@${id}> will bypass all auto-security modules.`));
+      const target = parseTarget(args[1]);
+      if (!target) return send(api, channelId, mid, E.error('Missing Target', usage));
+      if (target.type === 'invalid') return send(api, channelId, mid, E.error('Invalid Input', 'Please use a **user mention**, **user ID**, or **role mention** (`@Role`).'));
+      if (target.type === 'role') {
+        await addWhitelistRole(guildId, target.id);
+        return send(api, channelId, mid, E.success('Role Whitelisted', `<@&${target.id}> — all members with this role will bypass auto-security modules.`));
+      }
+      await addWhitelist(guildId, target.id);
+      return send(api, channelId, mid, E.success('User Whitelisted', `<@${target.id}> will bypass all auto-security modules.`));
     }
     if (sub === 'remove') {
-      const id = resolveId(args[1]);
-      if (!id) return send(api, channelId, mid, E.error('Missing User', 'Usage: `!whitelist remove <@user|ID>`'));
-      await removeWhitelist(guildId, id);
-      return send(api, channelId, mid, E.success('Removed', `<@${id}> removed from whitelist.`));
+      const target = parseTarget(args[1]);
+      if (!target) return send(api, channelId, mid, E.error('Missing Target', usage));
+      if (target.type === 'invalid') return send(api, channelId, mid, E.error('Invalid Input', 'Please use a **user mention**, **user ID**, or **role mention** (`@Role`).'));
+      if (target.type === 'role') {
+        await removeWhitelistRole(guildId, target.id);
+        return send(api, channelId, mid, E.success('Removed', `<@&${target.id}> removed from whitelist.`));
+      }
+      await removeWhitelist(guildId, target.id);
+      return send(api, channelId, mid, E.success('Removed', `<@${target.id}> removed from whitelist.`));
     }
     if (sub === 'list') {
-      const ids = await getWhitelist(guildId);
-      return send(api, channelId, mid, E.listEmbed('whitelist', ids));
+      const [userIds, roleIds] = await Promise.all([getWhitelist(guildId), getWhitelistRoles(guildId)]);
+      const fields = [];
+      if (userIds.length)  fields.push({ name: `👤 Users (${userIds.length})`,  value: userIds.map(id => `<@${id}>`).join(' '),   inline: false });
+      if (roleIds.length)  fields.push({ name: `🎭 Roles (${roleIds.length})`,  value: roleIds.map(id => `<@&${id}>`).join(' '),  inline: false });
+      if (!fields.length)  fields.push({ name: 'Empty', value: 'No users or roles whitelisted.', inline: false });
+      return send(api, channelId, mid, { embeds: [{ color: 0x2E86DE, title: '📋  Whitelist', fields }] });
     }
-    return send(api, channelId, mid, E.error('Usage', '`!whitelist add/remove/list <@user|ID>`'));
+    return send(api, channelId, mid, E.error('Usage', usage));
   }
 };
 
@@ -68,23 +97,41 @@ const blacklist = { name: 'blacklist', names: ['blacklist', 'bl'], permissions: 
   async execute({ api, args, guildId, channelId, message }) {
     const mid = message?.id;
     const sub = (args[0] || '').toLowerCase();
+    const g = await getSettings(guildId);
+    const p = g.prefix || 'fg!';
+    const usage = `Usage: \`${p}blacklist add/remove/list <@user|ID|@role>\``;
+
     if (sub === 'add') {
-      const id = resolveId(args[1]);
-      if (!id) return send(api, channelId, mid, E.error('Missing User', 'Usage: `!blacklist add <@user|ID>`'));
-      await addBlacklist(guildId, id);
-      return send(api, channelId, mid, E.success('Blacklisted', `<@${id}> will be auto-banned on join.`));
+      const target = parseTarget(args[1]);
+      if (!target) return send(api, channelId, mid, E.error('Missing Target', usage));
+      if (target.type === 'invalid') return send(api, channelId, mid, E.error('Invalid Input', 'Please use a **user mention**, **user ID**, or **role mention** (`@Role`).'));
+      if (target.type === 'role') {
+        await addBlacklistRole(guildId, target.id);
+        return send(api, channelId, mid, E.success('Role Blacklisted', `<@&${target.id}> — any member with this role will be auto-banned on join.`));
+      }
+      await addBlacklist(guildId, target.id);
+      return send(api, channelId, mid, E.success('Blacklisted', `<@${target.id}> will be auto-banned on join.`));
     }
     if (sub === 'remove') {
-      const id = resolveId(args[1]);
-      if (!id) return send(api, channelId, mid, E.error('Missing User', 'Usage: `!blacklist remove <@user|ID>`'));
-      await removeBlacklist(guildId, id);
-      return send(api, channelId, mid, E.success('Removed', `<@${id}> removed from blacklist.`));
+      const target = parseTarget(args[1]);
+      if (!target) return send(api, channelId, mid, E.error('Missing Target', usage));
+      if (target.type === 'invalid') return send(api, channelId, mid, E.error('Invalid Input', 'Please use a **user mention**, **user ID**, or **role mention** (`@Role`).'));
+      if (target.type === 'role') {
+        await removeBlacklistRole(guildId, target.id);
+        return send(api, channelId, mid, E.success('Removed', `<@&${target.id}> removed from blacklist.`));
+      }
+      await removeBlacklist(guildId, target.id);
+      return send(api, channelId, mid, E.success('Removed', `<@${target.id}> removed from blacklist.`));
     }
     if (sub === 'list') {
-      const ids = await getBlacklist(guildId);
-      return send(api, channelId, mid, E.listEmbed('blacklist', ids));
+      const [userIds, roleIds] = await Promise.all([getBlacklist(guildId), getBlacklistRoles(guildId)]);
+      const fields = [];
+      if (userIds.length)  fields.push({ name: `👤 Users (${userIds.length})`,  value: userIds.map(id => `<@${id}>`).join(' '),   inline: false });
+      if (roleIds.length)  fields.push({ name: `🎭 Roles (${roleIds.length})`,  value: roleIds.map(id => `<@&${id}>`).join(' '),  inline: false });
+      if (!fields.length)  fields.push({ name: 'Empty', value: 'No users or roles blacklisted.', inline: false });
+      return send(api, channelId, mid, { embeds: [{ color: 0xE74C3C, title: '🚫  Blacklist', fields }] });
     }
-    return send(api, channelId, mid, E.error('Usage', '`!blacklist add/remove/list <@user|ID>`'));
+    return send(api, channelId, mid, E.error('Usage', usage));
   }
 };
 
@@ -103,6 +150,23 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
     const boolVal = ['true','on','enable','enabled'].includes(v);
     const falseV  = ['false','off','disable','disabled'].includes(v);
     const validActions = ['ban', 'kick', 'timeout', 'alert'];
+    const modules = ['antiraid', 'antinuke', 'antispam', 'antiflood'];
+
+    // Shortcut: fg!config <module> enable / disable
+    if (modules.includes(mod) && ['enable','disable','on','off'].includes(k)) {
+      const isEnable = ['enable','on'].includes(k);
+      const patchMap = {
+        antiraid:  { antiraid_enabled:  isEnable },
+        antinuke:  { antinuke_enabled:  isEnable },
+        antispam:  { antispam_enabled:  isEnable },
+        antiflood: { antiflood_enabled: isEnable },
+      };
+      await updateSettings(guildId, patchMap[mod]);
+      const moduleName = { antiraid: '🛡️ AntiRaid', antinuke: '💥 AntiNuke', antispam: '⚠️ AntiSpam', antiflood: '🌊 AntiFlood' }[mod];
+      return send(api, channelId, mid, {
+        embeds: [{ color: isEnable ? 0x43B581 : 0xE74C3C, description: `${moduleName} has been **${isEnable ? 'enabled' : 'disabled'}**.` }]
+      });
+    }
 
     // Determina ce se schimba si aplica
     let patch = null;
@@ -110,27 +174,28 @@ const config = { name: 'config', names: ['config', 'settings'], permissions: tru
     let displayVal = null;
 
     if (mod === 'antiraid') {
-      if (k === 'enabled')                               { patch = { antiraid_enabled: boolVal || !falseV };  displayKey = 'Enabled';    displayVal = String(boolVal || !falseV); }
-      else if (k === 'threshold' && numVal > 0)          { patch = { antiraid_threshold: numVal };             displayKey = 'Threshold';  displayVal = `${numVal} joins`; }
+      if (k === 'threshold' && numVal > 0)               { patch = { antiraid_threshold: numVal };             displayKey = 'Threshold';  displayVal = `${numVal} joins`; }
       else if (k === 'interval'  && numVal > 0)          { patch = { antiraid_interval: numVal * 1000 };       displayKey = 'Interval';   displayVal = `${numVal}s`; }
       else if (k === 'action' && validActions.includes(v)) { patch = { antiraid_action: v };                   displayKey = 'Action';     displayVal = v; }
-      else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `threshold`, `interval`, `action`\nActions: `ban`, `kick`, `alert`'));
+      else return send(api, channelId, mid, E.error('Invalid', `Keys: \`threshold\`, \`interval\`, \`action\`\nActions: \`ban\`, \`kick\`, \`alert\`\nTo toggle: \`${g.prefix || 'fg!'}config antiraid enable/disable\``));
     } else if (mod === 'antinuke') {
-      if (k === 'enabled')                               { patch = { antinuke_enabled: boolVal || !falseV };  displayKey = 'Enabled';    displayVal = String(boolVal || !falseV); }
-      else if (k === 'threshold' && numVal > 0)          { patch = { antinuke_threshold: numVal };             displayKey = 'Threshold';  displayVal = `${numVal} actions`; }
+      if (k === 'threshold' && numVal > 0)               { patch = { antinuke_threshold: numVal };             displayKey = 'Threshold';  displayVal = `${numVal} actions`; }
       else if (k === 'interval'  && numVal > 0)          { patch = { antinuke_interval: numVal * 1000 };       displayKey = 'Interval';   displayVal = `${numVal}s`; }
       else if (k === 'action' && ['ban','alert'].includes(v)) { patch = { antinuke_action: v };                displayKey = 'Action';     displayVal = v; }
-      else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `threshold`, `interval`, `action`\nActions: `ban`, `alert`'));
+      else return send(api, channelId, mid, E.error('Invalid', `Keys: \`threshold\`, \`interval\`, \`action\`\nActions: \`ban\`, \`alert\`\nTo toggle: \`${g.prefix || 'fg!'}config antinuke enable/disable\``));
     } else if (mod === 'antispam') {
-      if (k === 'enabled')                               { patch = { antispam_enabled: boolVal || !falseV };  displayKey = 'Enabled';    displayVal = String(boolVal || !falseV); }
-      else if (k === 'max'      && numVal > 0)           { patch = { antispam_max_msgs: numVal };              displayKey = 'Max Msgs';   displayVal = `${numVal} messages`; }
+      if (k === 'max'      && numVal > 0)                { patch = { antispam_max_msgs: numVal };              displayKey = 'Max Msgs';   displayVal = `${numVal} messages`; }
       else if (k === 'interval' && numVal > 0)           { patch = { antispam_interval: numVal * 1000 };       displayKey = 'Interval';   displayVal = `${numVal}s`; }
       else if (k === 'action' && validActions.includes(v)) { patch = { antispam_action: v };                   displayKey = 'Action';     displayVal = v; }
-      else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `max`, `interval`, `action`\nActions: `ban`, `kick`, `timeout`, `alert`'));
+      else if (k === 'publicmsg' && ['enable','disable','on','off'].includes(v)) {
+        const isOn = v === 'enable' || v === 'on';
+        patch = { antispam_public_msg: isOn };
+        displayKey = 'Public Message'; displayVal = isOn ? '✅ Enabled' : '❌ Disabled';
+      }
+      else return send(api, channelId, mid, E.error('Invalid', `Keys: \`max\`, \`interval\`, \`action\`, \`publicmsg\`\nActions: \`ban\`, \`kick\`, \`timeout\`, \`alert\`\nTo toggle: \`${g.prefix || 'fg!'}config antispam enable/disable\``));
     } else if (mod === 'antiflood') {
-      if (k === 'enabled')                               { patch = { antiflood_enabled: boolVal || !falseV }; displayKey = 'Enabled';    displayVal = String(boolVal || !falseV); }
-      else if (k === 'duplicates' && numVal > 0)         { patch = { antiflood_duplicates: numVal };           displayKey = 'Duplicates'; displayVal = `${numVal} identical msgs`; }
-      else return send(api, channelId, mid, E.error('Invalid', 'Keys: `enabled`, `duplicates`'));
+      if (k === 'duplicates' && numVal > 0)              { patch = { antiflood_duplicates: numVal };           displayKey = 'Duplicates'; displayVal = `${numVal} identical msgs`; }
+      else return send(api, channelId, mid, E.error('Invalid', `Keys: \`duplicates\`\nTo toggle: \`${g.prefix || 'fg!'}config antiflood enable/disable\``));
     } else {
       return send(api, channelId, mid, E.error('Unknown Module', 'Modules: `antiraid`, `antinuke`, `antispam`, `antiflood`'));
     }
@@ -346,9 +411,10 @@ ${roles.length ? roles.map(r => `<@&${r}>`).join(' ') : '*No roles configured ye
     }
 
     if (sub === 'add') {
-      const newRoles = args.slice(1).map(a => a.replace(/[<@&>]/g, '')).filter(Boolean);
+      // Accepta doar mentiuni valide de rol: <@&ID>
+      const newRoles = args.slice(1).filter(a => /^<@&\d+>$/.test(a)).map(a => a.replace(/[<@&>]/g, ''));
       if (!newRoles.length) return send(api, channelId, mid,
-        { embeds: [{ color: 0xE74C3C, title: '❌ No roles specified', description: 'Usage: `!alertrole add @role1 @role2`' }] });
+        { embeds: [{ color: 0xE74C3C, title: '❌ Invalid Input', description: 'You must mention at least one valid role.\nUsage: `!alertrole add @role1 @role2`' }] });
       const updated = [...new Set([...roles, ...newRoles])];
       await updateSettings(guildId, { alert_roles: updated });
       return send(api, channelId, mid, {
@@ -361,9 +427,10 @@ ${roles.length ? roles.map(r => `<@&${r}>`).join(' ') : '*No roles configured ye
     }
 
     if (sub === 'remove') {
-      const toRemove = args.slice(1).map(a => a.replace(/[<@&>]/g, '')).filter(Boolean);
+      // Accepta doar mentiuni valide de rol: <@&ID>
+      const toRemove = args.slice(1).filter(a => /^<@&\d+>$/.test(a)).map(a => a.replace(/[<@&>]/g, ''));
       if (!toRemove.length) return send(api, channelId, mid,
-        { embeds: [{ color: 0xE74C3C, title: '❌ No roles specified', description: 'Usage: `!alertrole remove @role1 @role2`' }] });
+        { embeds: [{ color: 0xE74C3C, title: '❌ Invalid Input', description: 'You must mention at least one valid role.\nUsage: `!alertrole remove @role1 @role2`' }] });
       const updated = roles.filter(r => !toRemove.includes(r));
       await updateSettings(guildId, { alert_roles: updated });
       return send(api, channelId, mid, {
