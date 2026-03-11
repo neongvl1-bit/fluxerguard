@@ -42,7 +42,8 @@ function hasPrivilege(memberRoleIds, allRoles) {
 
 // Functia principala — folosita de antiRaid, antiNuke, antiSpam
 // memberRoleIds = array de role IDs (optional, daca le avem deja din event)
-async function isPrivileged(api, guildId, userId, memberRoleIds) {
+// skipFetch = daca true, nu apelam getMember (folosit din antiSpam unde avem deja rolurile din event)
+async function isPrivileged(api, guildId, userId, memberRoleIds, skipFetch = false) {
   const gId = String(guildId);
   const uId = String(userId);
 
@@ -56,25 +57,21 @@ async function isPrivileged(api, guildId, userId, memberRoleIds) {
   if (ownerIds.get(gId) === uId) return true;
 
   try {
-    const member = await api.guilds.getMember(gId, uId).catch(() => null);
-    const roleIds = member?.roles?.length ? member.roles : (memberRoleIds || []);
-    const allRoles = await getGuildRoles(api, gId);
-
-    // Debug — arata rolurile userului si permisiunile lor
-    console.log(`[PRIV DEBUG] user=${uId} roleIds=${JSON.stringify(roleIds)}`);
-    for (const role of allRoles) {
-      if (roleIds.map(String).includes(String(role.id))) {
-        console.log(`[PRIV DEBUG]   role=${role.name} (${role.id}) perms=${role.permissions}`);
-      }
+    // Daca avem rolurile din event si skipFetch=true, nu mai apelam getMember
+    // Evita API call extra pe Fluxer pentru fiecare mesaj
+    let roleIds = memberRoleIds || [];
+    if (!skipFetch && !roleIds.length) {
+      const member = await api.guilds.getMember(gId, uId).catch(() => null);
+      if (member?.roles?.length) roleIds = member.roles;
     }
-    // Include si @everyone (id = guildId)
-    const everyone = allRoles.find(r => String(r.id) === gId);
-    if (everyone) console.log(`[PRIV DEBUG]   @everyone perms=${everyone.permissions}`);
 
-    if (roleIds.length && allRoles.length) return hasPrivilege(roleIds, allRoles);
+    const allRoles = await getGuildRoles(api, gId);
+    if (roleIds.length && allRoles.length) {
+      return hasPrivilege(roleIds, allRoles);
+    }
   } catch (_) {}
 
   return false;
 }
 
-module.exports = { isPrivileged, setOwner, getGuildRoles, hasPrivilege };
+module.exports = { isPrivileged, setOwner, getGuildRoles, hasPrivilege, ownerCache: ownerIds };
