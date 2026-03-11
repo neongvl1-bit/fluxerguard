@@ -5,14 +5,14 @@ const { settingsCache } = require('./cache');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
 const DEFAULT = () => ({
-  prefix:            process.env.DEFAULT_PREFIX || '!',
+  prefix:            process.env.DEFAULT_PREFIX || 'fg!',
   log_channel:       null,
   lockdown_enabled:  false,
   lockdown_reason:   null,
   lockdown_mod:      null,
   antiraid_enabled:  true,  antiraid_threshold: 5,  antiraid_interval: 5000,  antiraid_action: 'kick',
   antinuke_enabled:  true,  antinuke_threshold: 3,  antinuke_interval: 10000, antinuke_action: 'ban',
-  antispam_enabled:  true,  antispam_max_msgs:  8,  antispam_interval: 5000,  antispam_action: 'timeout', antispam_timeout_ms: 300000,
+  antispam_enabled:  true,  antispam_max_msgs:  8,  antispam_interval: 5000,  antispam_action: 'timeout', antispam_timeout_ms: 300000, antispam_public_msg: true,
   antiflood_enabled: true,  antiflood_duplicates: 4,
   alert_roles:       [],    alert_ping_enabled: true,
 });
@@ -54,6 +54,11 @@ async function getSettings(guildId) {
   const cached = settingsCache.get(guildId);
   if (cached) return cached;
   const { data } = await supabase.from('guild_settings').select('*').eq('guild_id', guildId).single();
+  if (!data) {
+    // Server nou — creeaza inregistrarea cu setarile default
+    const defaults = DEFAULT();
+    try { await supabase.from('guild_settings').insert({ guild_id: guildId, ...defaults, updated_at: new Date().toISOString() }); } catch (_) {}
+  }
   const s = { ...DEFAULT(), ...(data || {}), guild_id: guildId };
   settingsCache.set(guildId, s);
   return s;
@@ -161,6 +166,38 @@ async function getBlacklist(guildId) {
   return (data || []).map(r => r.user_id);
 }
 
+// ── Whitelist Roles ──────────────────────────────────────────────────────────
+async function isRoleWhitelisted(guildId, roleId) {
+  const { data } = await supabase.from('whitelist_roles').select('id').eq('guild_id', guildId).eq('role_id', roleId).single();
+  return !!data;
+}
+async function addWhitelistRole(guildId, roleId) {
+  await supabase.from('whitelist_roles').upsert({ guild_id: guildId, role_id: roleId });
+}
+async function removeWhitelistRole(guildId, roleId) {
+  await supabase.from('whitelist_roles').delete().eq('guild_id', guildId).eq('role_id', roleId);
+}
+async function getWhitelistRoles(guildId) {
+  const { data } = await supabase.from('whitelist_roles').select('role_id').eq('guild_id', guildId);
+  return (data || []).map(r => r.role_id);
+}
+
+// ── Blacklist Roles ───────────────────────────────────────────────────────────
+async function isRoleBlacklisted(guildId, roleId) {
+  const { data } = await supabase.from('blacklist_roles').select('id').eq('guild_id', guildId).eq('role_id', roleId).single();
+  return !!data;
+}
+async function addBlacklistRole(guildId, roleId) {
+  await supabase.from('blacklist_roles').upsert({ guild_id: guildId, role_id: roleId });
+}
+async function removeBlacklistRole(guildId, roleId) {
+  await supabase.from('blacklist_roles').delete().eq('guild_id', guildId).eq('role_id', roleId);
+}
+async function getBlacklistRoles(guildId) {
+  const { data } = await supabase.from('blacklist_roles').select('role_id').eq('guild_id', guildId);
+  return (data || []).map(r => r.role_id);
+}
+
 // ── Threat Stats ──────────────────────────────────────────────────────────────
 function getWeekKey() {
   const now  = new Date();
@@ -210,12 +247,27 @@ async function clearLockdownSnapshot(guildId) {
   await supabase.from('lockdown_snapshots').delete().eq('guild_id', guildId);
 }
 
+// ── Purge all guild data on bot leave ─────────────────────────────────────────
+async function purgeGuildData(guildId) {
+  const tables = [
+    'guild_settings', 'cases', 'mod_notes', 'threat_stats',
+    'whitelist', 'whitelist_roles', 'blacklist', 'blacklist_roles',
+    'lockdown_snapshots',
+  ];
+  await Promise.allSettled(
+    tables.map(t => supabase.from(t).delete().eq('guild_id', guildId))
+  );
+}
+
 module.exports = {
   getSettings, updateSettings,
   createCase, getCaseById, getCasesByUser, deleteCase,
   isWhitelisted, addWhitelist, removeWhitelist, getWhitelist,
+  isRoleWhitelisted, addWhitelistRole, removeWhitelistRole, getWhitelistRoles,
   isBlacklisted, addBlacklist, removeBlacklist, getBlacklist,
+  isRoleBlacklisted, addBlacklistRole, removeBlacklistRole, getBlacklistRoles,
   incrementStat, getThreatStats,
   addNote, getNotes, deleteNote,
   saveLockdownSnapshot, getLockdownSnapshot, clearLockdownSnapshot,
+  purgeGuildData,
 };
