@@ -100,7 +100,6 @@ async function executeLockdown(api, guildId, reason, modTag) {
 
   // 1. Ia toate canalele text din cache (gateway) — /guilds/{id}/channels returneaza [] pe Fluxer
   const cached = getGuildChannels(guildId);
-  console.log(`[LOCKDOWN] channel cache size=${cached.length} for guild=${guildId}`);
   const textChannels = cached.filter(c => c.type === 0 || c.type === 5 || c.type == null);
 
   // 2. Gaseste @everyone role ID (are acelasi ID ca guildId)
@@ -183,7 +182,6 @@ const unlockdown = { name: 'unlockdown', names: ['unlockdown'], permissions: tru
       updateSettings(guildId, { lockdown_enabled: false, lockdown_reason: null, lockdown_mod: null }),
     ]);
     const unlocked = restoreResults.filter(r => r.status === 'fulfilled').length;
-    console.log(`[LOCKDOWN] Lifted in ${guildId} by ${author.username} — ${unlocked} channels restored`);
     getSettings(guildId).then(s => {
       if (s.log_channel) api.channels.createMessage(s.log_channel, E.lockdownEmbed(false, '', author.username, unlocked)).catch(() => {});
     }).catch(() => {});
